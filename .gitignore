@@ -1,3 +1,20 @@
-echo ".env" >> .gitignore
-echo "node_modules/" >> .gitignore
-/node_modules
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+
+# Spark
+*.jar
+
+# VSCode
+.vscode/
+
+# Miscellaneous
+.DS_Store
