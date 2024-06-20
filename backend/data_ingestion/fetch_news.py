@@ -2,159 +2,87 @@ import requests
 from bs4 import BeautifulSoup
 import mysql.connector
 from mysql.connector import Error
+from datetime import datetime
 from dotenv import load_dotenv
 import os
 
-# Load environment variables from .env file
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv()
 
-def get_db_connection():
+def get_database_connection():
     try:
-        conn = mysql.connector.connect(
-            user=os.getenv('MYSQL_USER'),
-            password=os.getenv('MYSQL_PASSWORD'),
-            host=os.getenv('MYSQL_HOST'),
-            database=os.getenv('MYSQL_DATABASE')
+        connection = mysql.connector.connect(
+            host=os.getenv('DB_HOST'),
+            database=os.getenv('DB_NAME'),
+            user=os.getenv('DB_USER'),
+            password=os.getenv('DB_PASSWORD')
         )
-        if conn.is_connected():
-            return conn
+        if connection.is_connected():
+            return connection
     except Error as e:
-        print(f"Error: {e}")
+        print(f"Error connecting to MySQL: {e}")
         return None
 
-def fetch_news():
-    sources = [
-        {'url': 'https://www.dnevnik.bg/', 'source_name': 'Dnevnik'},
-        {'url': 'https://novini.bg/', 'source_name': 'Novini'},
-        {'url': 'https://www.24chasa.bg/', 'source_name': '24 Chasa'},
-        {'url': 'https://nova.bg/news', 'source_name': 'Nova'},
-        {'url': 'https://bntnews.bg/', 'source_name': 'BNT News'}
-    ]
+def fetch_dnevnik_news():
+    url = 'https://www.dnevnik.bg/'
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    articles = []
 
-    for source in sources:
-        url = source['url']
-        source_name = source['source_name']
-        response = requests.get(url)
-        soup = BeautifulSoup(response.content, 'html.parser')
+    for item in soup.find_all('article'):
+        h3_tag = item.find('h3')
+        if h3_tag: 
+            title = h3_tag.text.strip()
+            link = item.find('a')['href']
+            published = datetime.now()
+            articles.append((title, link, published, 'Dnevnik'))
 
-        if source_name == 'Dnevnik':
-            articles = soup.find_all('div', class_='article')
-            for article in articles:
-                title_tag = article.find('h3')
-                if title_tag:
-                    title = title_tag.text.strip()
-                    link = title_tag.find('a')['href']
-                    link = url + link if not link.startswith('http') else link
-                    published_tag = article.find('time')
-                    published = published_tag['datetime'] if published_tag else 'Unknown'
+    return articles
 
-                    conn = get_db_connection()
-                    if conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "INSERT INTO articles (title, link, published, source) VALUES (%s, %s, %s, %s)",
-                            (title, link, published, source_name)
-                        )
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
+def fetch_novini_news():
+    url = 'https://novini.bg/'
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    articles = []
 
-        elif source_name == 'Novini':
-            articles = soup.find_all('div', class_='article-item')
-            for article in articles:
-                title_tag = article.find('h3', class_='article-title')
-                if title_tag:
-                    title = title_tag.text.strip()
-                    link = title_tag.find('a')['href']
-                    link = url + link if not link.startswith('http') else link
-                    published_tag = article.find('time', class_='article-date')
-                    published = published_tag['datetime'] if published_tag else 'Unknown'
+    for item in soup.find_all('div', class_='news-item'):
+        h2_tag = item.find('h2')
+        if h2_tag:  # Ensure h2_tag is not None
+            title = h2_tag.text.strip()
+            link = item.find('a')['href']
+            published = datetime.now()
+            articles.append((title, link, published, 'Novini'))
 
-                    conn = get_db_connection()
-                    if conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "INSERT INTO articles (title, link, published, source) VALUES (%s, %s, %s, %s)",
-                            (title, link, published, source_name)
-                        )
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
+    return articles
 
-        # Add similar blocks for other sources, adjusting the selectors as needed
-        elif source_name == '24 Chasa':
-            # Adjust the following selectors based on the actual HTML structure of 24chasa.bg
-            articles = soup.find_all('div', class_='news-card')
-            for article in articles:
-                title_tag = article.find('a', class_='title')
-                if title_tag:
-                    title = title_tag.text.strip()
-                    link = title_tag['href']
-                    link = url + link if not link.startswith('http') else link
-                    published_tag = article.find('span', class_='date')
-                    published = published_tag.text.strip() if published_tag else 'Unknown'
 
-                    # Store in MySQL
-                    conn = get_db_connection()
-                    if conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "INSERT INTO articles (title, link, published, source) VALUES (%s, %s, %s, %s)",
-                            (title, link, published, source_name)
-                        )
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
+def insert_articles_to_db(articles):
+    connection = get_database_connection()
+    if connection is None:
+        print("Failed to connect to the database.")
+        return
 
-        elif source_name == 'Nova':
-            # Adjust the following selectors based on the actual HTML structure of Nova.bg
-            articles = soup.find_all('div', class_='news-card')
-            for article in articles:
-                title_tag = article.find('a', class_='title')
-                if title_tag:
-                    title = title_tag.text.strip()
-                    link = title_tag['href']
-                    link = url + link if not link.startswith('http') else link
-                    published_tag = article.find('span', class_='date')
-                    published = published_tag.text.strip() if published_tag else 'Unknown'
-
-                    # Store in MySQL
-                    conn = get_db_connection()
-                    if conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "INSERT INTO articles (title, link, published, source) VALUES (%s, %s, %s, %s)",
-                            (title, link, published, source_name)
-                        )
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
-
-    
-        elif source_name == 'BNT News':
-            # Adjust the following selectors based on the actual HTML structure of BNT News
-            articles = soup.find_all('div', class_='news-item')
-            for article in articles:
-                title_tag = article.find('h2')
-                if title_tag:
-                    title = title_tag.text.strip()
-                    link = article.find('a')['href']
-                    link = url + link if not link.startswith('http') else link
-                    published_tag = article.find('time')
-                    published = published_tag['datetime'] if published_tag else 'Unknown'
-
-                    # Store in MySQL
-                    conn = get_db_connection()
-                    if conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "INSERT INTO articles (title, link, published, source) VALUES (%s, %s, %s, %s)",
-                            (title, link, published, source_name)
-                        )
-                        conn.commit()
-                        cursor.close()
-                        conn.close()
-
+    cursor = connection.cursor()
+    query = """
+        INSERT INTO articles (title, link, published, source)
+        VALUES (%s, %s, %s, %s)
+    """
+    try:
+        cursor.executemany(query, articles)
+        connection.commit()
+    except Error as e:
+        print(f"Error inserting articles: {e}")
+        connection.rollback()
+    finally:
+        cursor.close()
+        connection.close()
 
 if __name__ == '__main__':
-    fetch_news()
+    all_articles = []
+    all_articles.extend(fetch_dnevnik_news())
+    all_articles.extend(fetch_novini_news())
+    # all_articles.extend(fetch_24chasa_news())
+    # all_articles.extend(fetch_nova_news())
+    # all_articles.extend(fetch_bnt_news())
+
+    insert_articles_to_db(all_articles)
+    print(f"Inserted {len(all_articles)} articles into the database.")

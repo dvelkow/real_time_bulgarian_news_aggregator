@@ -9,6 +9,7 @@ const NewsList = () => {
     const fetchArticles = async () => {
       try {
         const response = await axios.get('http://localhost:5000/news');
+        console.log('Fetched articles:', response.data); // Add this line for debugging
         setArticles(response.data);
       } catch (error) {
         console.error('Error fetching articles:', error);
@@ -20,7 +21,7 @@ const NewsList = () => {
 
   return (
     <ul className="news-list">
-      {articles.map(article => (
+      {articles.map((article) => (
         <NewsItem key={article.id} article={article} />
       ))}
     </ul>

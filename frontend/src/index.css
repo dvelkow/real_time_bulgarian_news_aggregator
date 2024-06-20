@@ -1,1 +1,27 @@
-/* Add any global styles here */
+.App {
+  text-align: center;
+}
+
+.App-header {
+  background-color: #282c34;
+  padding: 20px;
+  color: white;
+}
+
+.news-list {
+  list-style-type: none;
+  padding: 0;
+}
+
+.news-list li {
+  padding: 10px 0;
+}
+
+.news-list a {
+  color: #61dafb;
+  text-decoration: none;
+}
+
+.news-list a:hover {
+  text-decoration: underline;
+}
