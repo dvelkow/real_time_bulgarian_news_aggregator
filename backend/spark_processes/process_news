@@ -1,31 +1,37 @@
 from pyspark.sql import SparkSession
+from dotenv import load_dotenv
+import os
 
+# Load environment variables from .env file
+load_dotenv()
 
+# Get MySQL database configurations from environment variables
+jdbc_url = f"jdbc:mysql://{os.getenv('DB_HOST')}:3306/{os.getenv('DB_NAME')}"
+table_name = "articles"
+properties = {
+    "user": os.getenv('DB_USER'),
+    "password": os.getenv('DB_PASSWORD'),
+    "driver": "com.mysql.cj.jdbc.Driver"
+}
+
+# Initialize Spark session
 spark = SparkSession.builder \
     .appName("NewsProcessing") \
     .config("spark.jars", "/path/to/mysql-connector-java-8.0.26.jar") \
     .getOrCreate()
 
-# MySQL database configurations
-jdbc_url = "jdbc:mysql://localhost:3306/news_db"
-table_name = "articles"
-properties = {
-    "user": "dobromir",
-    "password": "Ribame",
-    "driver": "com.mysql.cj.jdbc.Driver"
-}
-
-# Loading the data from MySQL into Spark
+# Load the data from MySQL into Spark
 df = spark.read.jdbc(url=jdbc_url, table=table_name, properties=properties)
 
-# Data processing 
+# Data processing: Count articles by source
 article_counts_by_source = df.groupBy("source").count()
 
 # Show the results
 article_counts_by_source.show()
 
-# Saving the results back to MySQL
+# Save the results back to MySQL
 output_table_name = "article_counts_by_source"
 article_counts_by_source.write.jdbc(url=jdbc_url, table=output_table_name, mode="overwrite", properties=properties)
 
+# Stop the Spark session
 spark.stop()

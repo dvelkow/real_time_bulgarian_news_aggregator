@@ -1,1 +1,1 @@
-from data_ingestion.fetch_news import fetch_news
+from .fetch_news import fetch_news
