@@ -33,23 +33,33 @@ def fetch_24chasa_news(limit=10):
     articles = []
     count = 0
 
-    for item in soup.find_all('div', class_='header-news'):
+    for item in soup.find_all('article', class_='grid-layout-item'):
         if count >= limit:
             break
+
         title_tag = item.find('h3', class_='title')
         if title_tag and title_tag.a:
             title = title_tag.a.text.strip()
             link = title_tag.a['href']
-            link = "https://www.24chasa.bg" + link if link.startswith('/') else link
-            date_element = item.find('time', class_='time')
-            if date_element and date_element.get('datetime'):
-                date_str = date_element['datetime'].strip()
-                published = datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S%z')
+            if not link.startswith('http'):
+                link = 'https://www.24chasa.bg' + link
+
+            time_element = item.find('time', class_='time')
+            if time_element:
+                time_str = time_element.text.strip()
+                date_str = f"{datetime.now().year}-06-21 {time_str}"
+                try:
+                    published = datetime.strptime(date_str, '%Y-%m-%d %H:%M')
+                    published = pytz.timezone('Europe/Sofia').localize(published)
+                except ValueError:
+                    published = datetime.now(pytz.timezone('Europe/Sofia'))
             else:
                 published = datetime.now(pytz.timezone('Europe/Sofia'))
+
             print(f"Fetched 24chasa article: {title}, Published: {published}")  # Debug print
             articles.append((title, link, published, '24chasa'))
             count += 1
+
     return articles
 
 def fetch_dnevnik_news(limit=10):
@@ -74,6 +84,38 @@ def fetch_dnevnik_news(limit=10):
             print(f"Fetched Dnevnik article: {title}, Published: {published}")  # Debug print
             articles.append((title, link, published, 'Dnevnik'))
             count += 1
+    return articles
+
+def fetch_fakti_news(limit=10):
+    url = 'https://fakti.bg/'
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    articles = []
+    count = 0
+
+    for item in soup.find_all('article', class_='panel selected-ln'):
+        if count >= limit:
+            break
+        title_tag = item.find('span', class_='article-title')
+        if title_tag:
+            title = title_tag.text.strip()
+            link = item.find('a')['href']
+            link = "https://fakti.bg" + link if link.startswith('/') else link
+            date_element = item.find('div', class_='ndt')
+            if date_element:
+                date_str = date_element.text.strip()
+                try:
+                    published = datetime.strptime(date_str, 'днес в %H:%M ч.')
+                    published = published.replace(year=datetime.now().year, month=datetime.now().month, day=datetime.now().day)
+                    published = pytz.timezone('Europe/Sofia').localize(published)
+                except ValueError:
+                    published = datetime.now(pytz.timezone('Europe/Sofia'))
+            else:
+                published = datetime.now(pytz.timezone('Europe/Sofia'))
+            print(f"Fetched Fakti article: {title}, Published: {published}")  # Debug print
+            articles.append((title, link, published, 'Fakti'))
+            count += 1
+
     return articles
 
 def delete_all_articles(connection):
@@ -114,6 +156,7 @@ def fetch_news():
     all_articles = []
     all_articles.extend(fetch_24chasa_news(limit=10))
     all_articles.extend(fetch_dnevnik_news(limit=10))
+    all_articles.extend(fetch_fakti_news(limit=10))
     return all_articles
 
 def update_news_database():
