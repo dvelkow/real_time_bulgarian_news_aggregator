@@ -7,8 +7,9 @@ from mysql.connector import Error
 from dotenv import load_dotenv
 import os
 
-print("Importing fetch_news.py")  # Diagnostic print
+print("Importing fetch_news.py")
 
+#loads mysql connection secure info
 load_dotenv()
 
 def get_database_connection():
@@ -26,6 +27,7 @@ def get_database_connection():
         print(f"Error connecting to MySQL: {e}")
     return None
 
+#fetching data from 24chasa.bg
 def fetch_24chasa_news(limit=10):
     url = 'https://www.24chasa.bg/'
     response = requests.get(url)
@@ -33,35 +35,44 @@ def fetch_24chasa_news(limit=10):
     articles = []
     count = 0
 
-    for item in soup.find_all('article', class_='grid-layout-item'):
-        if count >= limit:
-            break
+    # Find all news sections
+    news_sections = [
+        soup.find('section', class_='important-news-container'),
+        soup.find('div', class_='main-grid')
+    ]
 
-        title_tag = item.find('h3', class_='title')
-        if title_tag and title_tag.a:
-            title = title_tag.a.text.strip()
-            link = title_tag.a['href']
-            if not link.startswith('http'):
-                link = 'https://www.24chasa.bg' + link
+    for section in news_sections:
+        if section:
+            for item in section.find_all('article'):
+                if count >= limit:
+                    return articles
 
-            time_element = item.find('time', class_='time')
-            if time_element:
-                time_str = time_element.text.strip()
-                date_str = f"{datetime.now().year}-06-21 {time_str}"
-                try:
-                    published = datetime.strptime(date_str, '%Y-%m-%d %H:%M')
-                    published = pytz.timezone('Europe/Sofia').localize(published)
-                except ValueError:
-                    published = datetime.now(pytz.timezone('Europe/Sofia'))
-            else:
-                published = datetime.now(pytz.timezone('Europe/Sofia'))
+                title_tag = item.find('h3', class_='title')
+                if title_tag and title_tag.a:
+                    title = title_tag.a.text.strip()
+                    link = title_tag.a['href']
+                    if not link.startswith('http'):
+                        link = 'https://www.24chasa.bg' + link
 
-            print(f"Fetched 24chasa article: {title}, Published: {published}")  # Debug print
-            articles.append((title, link, published, '24chasa'))
-            count += 1
+                    time_element = item.find('time', class_='time')
+                    if time_element:
+                        time_str = time_element.text.strip()
+                        date_str = f"{datetime.now().year}-{datetime.now().month:02d}-{datetime.now().day:02d} {time_str}"
+                        try:
+                            published = datetime.strptime(date_str, '%Y-%m-%d %H:%M')
+                            published = pytz.timezone('Europe/Sofia').localize(published)
+                        except ValueError:
+                            published = datetime.now(pytz.timezone('Europe/Sofia'))
+                    else:
+                        published = datetime.now(pytz.timezone('Europe/Sofia'))
+
+                    print(f"Fetched 24chasa article: {title}, Published: {published}")  # Debug print
+                    articles.append((title, link, published, '24chasa'))
+                    count += 1
 
     return articles
 
+#fetching data from dnevnik.bg
 def fetch_dnevnik_news(limit=10):
     url = 'https://www.dnevnik.bg/'
     response = requests.get(url)
@@ -86,6 +97,7 @@ def fetch_dnevnik_news(limit=10):
             count += 1
     return articles
 
+#fetching data from fakti.bg
 def fetch_fakti_news(limit=10):
     url = 'https://fakti.bg/'
     response = requests.get(url)
@@ -118,6 +130,7 @@ def fetch_fakti_news(limit=10):
 
     return articles
 
+#deleting all previous articles we had, so the database stays relevant
 def delete_all_articles(connection):
     try:
         cursor = connection.cursor()
@@ -130,7 +143,8 @@ def delete_all_articles(connection):
     finally:
         if cursor:
             cursor.close()
-
+            
+#inserting all the new fetched articles into the database
 def insert_articles_to_db(articles, connection):
     cursor = connection.cursor()
     query = """
@@ -152,6 +166,7 @@ def insert_articles_to_db(articles, connection):
     finally:
         cursor.close()
 
+#a function to fetch all the news
 def fetch_news():
     all_articles = []
     all_articles.extend(fetch_24chasa_news(limit=10))
@@ -169,6 +184,7 @@ def update_news_database():
         return len(articles)
     return 0
 
+#displaying in the terminal every single fetched news article
 if __name__ == "__main__":
     articles = fetch_news()
     for article in articles:
@@ -178,5 +194,4 @@ if __name__ == "__main__":
         print(f"Source: {article[3]}")
         print("---")
     
-    # Update the database with fetched articles
     print(f"Updated {update_news_database()} articles")
