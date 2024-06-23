@@ -51,13 +51,11 @@ Some of the hurdles I stumbled upon while building it:
 
 There's always room for more:
 
-- Implement real-time processing with Spark Streaming
-- Add sentiment analysis of news headlines
-- Set up a proper data warehouse for long-term analytics
-- Containerize the whole setup with Docker for easier deployment
+- Adding different tags based on news headlines and making topics on the site
+- Having an option for seeing trending news, could be donbe by taking the averages of the sites for views/hour and if a news article is beating it substantially we could determine it's trending
+
+I might work on these changes in the future but seeing as they are not closely related to data engineering I would no be implementing them now, as my focus is elsewhere. 
 
 ## Final Thoughts
 
-This project has been a great way to get hands-on experience with various data engineering tools and techniques. It's one thing to read about these concepts, but actually implementing them and during the process it felt that's where the real learning happend.
-
-Feel free to fork, improve, or completely overhaul this project. And if you're from one of the news sites we're scraping - um, please don't change your HTML structure? Thanks!
+This project has been a great way to get hands-on experience with various data engineering tools and techniques I have only read/watched about. It's one thing to read about these concepts, but actually implementing them and during the process it felt that's where the real learning happend.
