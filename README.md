@@ -2,7 +2,7 @@
 
 This project is a real-time news aggregator for Bulgarian news sources, with a focus on implementing various data engineering skills.
 
-![image](https://github.com/dvelkow/real_time_bulgarian_news_aggregator/assets/71397644/5a858c6e-4688-4ee8-a086-0b36ee0b6b94)
+<img src="https://github.com/dvelkow/real_time_bulgarian_news_aggregator/assets/71397644/5a858c6e-4688-4ee8-a086-0b36ee0b6b94" alt="image" width="800"/>
 
  
 ## Table of Contents
