@@ -10,6 +10,7 @@ This project is a real-time news aggregator for Bulgarian news sources, with a f
 - [Structure](#Structure)
 - [Challenges and Learnings](#Challenges-and-Learnings)
 - [Future Improvements](#Future-Improvements)
+- [Setup Instructions](#Setup-Instructions)
 
 ## Key Components
 
@@ -37,6 +38,58 @@ Here's where it gets interesting from a data engineering perspective:
 - Displays the latest news articles in a user-friendly interface
 - Implements client-side sorting and filtering of news articles for improved user experience
 - Utilizes React components for a maintainable code structure
+
+  ## Setup Instructions
+
+### Backend Setup
+
+1. **Clone the repository**:
+
+    ```sh
+    git clone https://github.com/dvelkow/real_time_bulgarian_news_aggregator.git
+    cd real_time_bulgarian_news_aggregator/backend
+    ```
+
+2. **install dependencies**:
+
+    ```sh
+    pip install -r requirements.txt
+    ```
+
+3. **Create a `.env` file in the `backend` directory and add your MySQL credentials, u need to have a **:
+
+    ```env
+    DB_HOST=localhost
+    DB_NAME= db_news /needs to be created first in MYSQL 
+    DB_USER= root
+    DB_PASSWORD=your_mysql_password
+    ```
+
+4. **Run the Flask application once inside ./backend**:
+
+    ```sh
+    python app.py
+    ```
+
+### Frontend Setup
+
+1. **Open a new terminal window and navigate to the `frontend` directory, from the same path just type**:
+
+    ```sh
+    cd ../frontend
+    ```
+
+2. **Install dependencies**:
+
+    ```sh
+    npm install
+    ```
+
+3. **Start the React application**:
+
+    ```sh
+    npm start
+    ```
 
 ## Challenges and Learnings
 
