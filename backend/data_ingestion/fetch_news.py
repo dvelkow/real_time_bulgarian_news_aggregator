@@ -28,7 +28,7 @@ def get_database_connection():
     return None
 
 #fetching data from 24chasa.bg
-def fetch_24chasa_news(limit=10):
+def fetch_24chasa_news(limit=3):
     url = 'https://www.24chasa.bg/'
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
@@ -98,7 +98,7 @@ def fetch_dnevnik_news(limit=10):
     return articles
 
 #fetching data from fakti.bg
-def fetch_fakti_news(limit=10):
+def fetch_fakti_news(limit=3):
     url = 'https://fakti.bg/'
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
@@ -169,9 +169,9 @@ def insert_articles_to_db(articles, connection):
 #a function to fetch all the news
 def fetch_news():
     all_articles = []
-    all_articles.extend(fetch_24chasa_news(limit=10))
+    all_articles.extend(fetch_24chasa_news(limit=3))
     all_articles.extend(fetch_dnevnik_news(limit=10))
-    all_articles.extend(fetch_fakti_news(limit=10))
+    all_articles.extend(fetch_fakti_news(limit=3))
     return all_articles
 
 def update_news_database():

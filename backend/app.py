@@ -6,6 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 from config import Config
 from models import db, Article
 from data_ingestion.fetch_news import fetch_news, update_news_database
+from spark_processes.process_news  import main as run_spark_processing
 import schedule
 import time
 import threading
