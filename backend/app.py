@@ -1,4 +1,5 @@
 import os
+import sys
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -6,7 +7,7 @@ from flask_sqlalchemy import SQLAlchemy
 from config import Config
 from models import db, Article
 from data_ingestion.fetch_news import fetch_news, update_news_database
-from spark_processes.process_news  import main as run_spark_processing
+from spark_processes import run_spark_processing
 import schedule
 import time
 import threading
