@@ -6,7 +6,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from config import Config
 from models import db, Article
-from data_ingestion.fetch_news import fetch_news, update_news_database
+from data_ingestion.fetch_news import NewsAggregator
 from spark_processes import run_spark_processing
 import schedule
 import time
@@ -51,7 +51,7 @@ def get_news():
 @app.route('/fetch-news', methods=['GET'])
 def fetch_news_route():
     try:
-        new_articles = fetch_news()
+        new_articles = NewsAggregator.fetch_all_news()
         for article_data in new_articles:
             article = Article(
                 title=article_data[0],
@@ -73,7 +73,7 @@ def test_route():
 def run_scheduled_task():
     with app.app_context():
         print("Running scheduled task to update news...")
-        update_news_database()
+        NewsAggregator.update_news_database()
 
 def run_scheduler():
     schedule.every(10).minutes.do(run_scheduled_task)
@@ -88,11 +88,11 @@ if __name__ == '__main__':
             print("Database tables created successfully")
         except Exception as e:
             print(f"Error creating database tables: {e}")
-    
+
     # Run initial news fetch
     with app.app_context():
-        update_news_database()
-    
+        NewsAggregator.update_news_database()
+
     # Start the scheduler in a separate thread
     scheduler_thread = threading.Thread(target=run_scheduler)
     scheduler_thread.daemon = True  # This ensures the thread will exit when the main program does
