@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import mysql.connector
 from mysql.connector import Error
@@ -21,61 +21,47 @@ class NewsFetcher(ABC):
         pass
 
     def get_soup(self):
-        response = requests.get(self.url)
-        return BeautifulSoup(response.content, 'html.parser')
+        return BeautifulSoup(requests.get(self.url).content, 'html.parser')
 
     def localize_time(self, dt):
         return pytz.timezone('Europe/Sofia').localize(dt)
 
 class Chasa24NewsFetcher(NewsFetcher):
-    def __init__(self, limit=3):
-        super().__init__('24chasa', 'https://www.24chasa.bg/', limit)
-
     def fetch_articles(self):
         soup = self.get_soup()
         articles = []
         count = 0
-
-        news_sections = [
-            soup.find('section', class_='important-news-container'),
-            soup.find('div', class_='main-grid')
-        ]
-
-        for section in news_sections:
+        for section in [soup.find('section', class_='important-news-container'), soup.find('div', class_='main-grid')]:
             if section:
                 for item in section.find_all('article'):
                     if count >= self.limit:
                         return articles
-
                     title_tag = item.find('h3', class_='title')
                     if title_tag and title_tag.a:
                         title = title_tag.a.text.strip()
-                        link = title_tag.a['href']
-                        if not link.startswith('http'):
-                            link = f'{self.url}{link}'
-
+                        link = f"{self.url}{title_tag.a['href']}" if not title_tag.a['href'].startswith('http') else title_tag.a['href']
                         time_element = item.find('time', class_='time')
-                        if time_element:
-                            time_str = time_element.text.strip()
-                            date_str = f"{datetime.now().year}-{datetime.now().month:02d}-{datetime.now().day:02d} {time_str}"
-                            try:
-                                published = datetime.strptime(date_str, '%Y-%m-%d %H:%M')
-                                published = self.localize_time(published)
-                            except ValueError:
-                                published = self.localize_time(datetime.now())
-                        else:
-                            published = self.localize_time(datetime.now())
-
+                        published = self.parse_date(time_element.text.strip()) if time_element else self.localize_time(datetime.now())
                         print(f"Fetched {self.source} article: {title}, Published: {published}")
                         articles.append((title, link, published, self.source))
                         count += 1
-
         return articles
 
-class DnevnikNewsFetcher(NewsFetcher):
-    def __init__(self, limit=10):
-        super().__init__('Dnevnik', 'https://www.dnevnik.bg/', limit)
+    def parse_date(self, date_str):
+        now = datetime.now()
+        if ',' in date_str:
+            date_part, time_part = date_str.split(',')
+            day, month, year = map(int, date_part.split('.'))
+            hour, minute = map(int, time_part.strip().split(':'))
+            published = datetime(year, month, day, hour, minute)
+        else:
+            hour, minute = map(int, date_str.strip().split(':'))
+            published = now.replace(hour=hour, minute=minute)
+            if published > now:
+                published -= timedelta(days=1)
+        return self.localize_time(published)
 
+class DnevnikNewsFetcher(NewsFetcher):
     def fetch_articles(self):
         soup = self.get_soup()
         articles = []
@@ -89,8 +75,7 @@ class DnevnikNewsFetcher(NewsFetcher):
                 link = item.find('a')['href']
                 date_element = item.find('time')
                 if date_element and date_element.get('datetime'):
-                    published = datetime.fromisoformat(date_element['datetime'].replace('Z', '+00:00'))
-                    published = published.astimezone(pytz.timezone('Europe/Sofia'))
+                    published = datetime.fromisoformat(date_element['datetime'].replace('Z', '+00:00')).astimezone(pytz.timezone('Europe/Sofia'))
                 else:
                     published = self.localize_time(datetime.now())
                 print(f"Fetched {self.source} article: {title}, Published: {published}")
@@ -99,46 +84,43 @@ class DnevnikNewsFetcher(NewsFetcher):
         return articles
 
 class FaktiNewsFetcher(NewsFetcher):
-    def __init__(self, limit=3):
-        super().__init__('Fakti', 'https://fakti.bg/', limit)
-
     def fetch_articles(self):
         soup = self.get_soup()
         articles = []
         count = 0
-
         for item in soup.find_all('article', class_='panel selected-ln'):
             if count >= self.limit:
                 break
             title_tag = item.find('span', class_='article-title')
             if title_tag:
                 title = title_tag.text.strip()
-                link = item.find('a')['href']
-                link = f"{self.url}{link}" if link.startswith('/') else link
+                link = f"{self.url}{item.find('a')['href']}" if item.find('a')['href'].startswith('/') else item.find('a')['href']
                 date_element = item.find('div', class_='ndt')
-                if date_element:
-                    date_str = date_element.text.strip()
-                    try:
-                        published = datetime.strptime(date_str, 'днес в %H:%M ч.')
-                        published = published.replace(year=datetime.now().year, month=datetime.now().month, day=datetime.now().day)
-                        published = self.localize_time(published)
-                    except ValueError:
-                        published = self.localize_time(datetime.now())
-                else:
-                    published = self.localize_time(datetime.now())
+                published = self.parse_date(date_element.text.strip()) if date_element else self.localize_time(datetime.now())
                 print(f"Fetched {self.source} article: {title}, Published: {published}")
                 articles.append((title, link, published, self.source))
                 count += 1
-
         return articles
+
+    def parse_date(self, date_str):
+        now = datetime.now()
+        if 'вчера' in date_str:
+            date = now - timedelta(days=1)
+        elif 'днес' in date_str:
+            date = now
+        else:
+            return self.localize_time(now)
+        time_str = date_str.split('в')[-1].strip().replace('ч.', '').strip()
+        time = datetime.strptime(time_str, '%H:%M')
+        return self.localize_time(date.replace(hour=time.hour, minute=time.minute))
 
 class NewsAggregator:
     @classmethod
     def fetch_all_news(cls):
         fetchers = [
-            Chasa24NewsFetcher(limit=3),
-            DnevnikNewsFetcher(limit=10),
-            FaktiNewsFetcher(limit=3)
+            Chasa24NewsFetcher('24chasa', 'https://www.24chasa.bg/', 3),
+            DnevnikNewsFetcher('Dnevnik', 'https://www.dnevnik.bg/', 10),
+            FaktiNewsFetcher('Fakti', 'https://fakti.bg/', 3)
         ]
         all_articles = []
         for fetcher in fetchers:
@@ -176,8 +158,7 @@ class NewsAggregator:
     def delete_all_articles(connection):
         try:
             cursor = connection.cursor()
-            query = "DELETE FROM articles"
-            cursor.execute(query)
+            cursor.execute("DELETE FROM articles")
             connection.commit()
             print(f"Deleted all articles")
         except Error as e:
@@ -189,17 +170,13 @@ class NewsAggregator:
     @staticmethod
     def insert_articles_to_db(articles, connection):
         cursor = connection.cursor()
-        query = """
-        INSERT INTO articles (title, link, published, source)
-        VALUES (%s, %s, %s, %s)
-        """
+        query = "INSERT INTO articles (title, link, published, source) VALUES (%s, %s, %s, %s)"
         try:
             for article in articles:
-                title, link, published, source = article
-                cursor.execute("SELECT COUNT(*) FROM articles WHERE title = %s", (title,))
+                cursor.execute("SELECT COUNT(*) FROM articles WHERE title = %s", (article[0],))
                 if cursor.fetchone()[0] == 0:
                     print(f"Inserting article: {article}")
-                    cursor.execute(query, (title, link, published, source))
+                    cursor.execute(query, article)
             connection.commit()
             print(f"Inserted {len(articles)} new articles")
         except Error as e:
