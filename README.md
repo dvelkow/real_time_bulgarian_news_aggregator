@@ -56,7 +56,7 @@ Here's where it gets interesting from a data engineering perspective:
     pip install -r requirements.txt
     ```
 
-3. **Create a `.env` file in the `backend` directory and add your MySQL credentials, u need to have a **:
+3. **Create a `.env` file in the `backend` directory and add your MySQL credentials, u need to have a**:
 
     ```env
     DB_HOST=localhost
