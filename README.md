@@ -56,7 +56,7 @@ Here's where it gets interesting from a data engineering perspective:
     pip install -r requirements.txt
     ```
 
-3. **Create a `.env` file in the `backend` directory and add your MySQL credentials, u need to have a **:
+3. **Create a `.env` file in the `backend` directory and add your MySQL credentials, u need to have a**:
 
     ```env
     DB_HOST=localhost
@@ -96,7 +96,7 @@ Here's where it gets interesting from a data engineering perspective:
 Some of the hurdles I stumbled upon while building it:
 
 - Web scraping is rather needy. All news sites have different HTML structures, meaning the fetch function needed to be rewritten for every different site, some were trickier then others. 
-- Balancing between real-time news aggregation and not filling all the slots of the site with spam news, as the sites some times tend to post multiple small news one after another.
+- Balancing between real-time news aggregation and not filling all the slots of the site with spam news, as the sites sometimes tend to post multiple small news one after another.
 - Setting up PySpark locally proved to be... painful.
 
 
@@ -105,7 +105,7 @@ Some of the hurdles I stumbled upon while building it:
 There's always room for more:
 
 - Adding different tags based on news headlines and making topics on the site
-- Having an option for seeing trending news, could be donbe by taking the averages of the sites for views/hour and if a news article is beating it substantially we could determine it's trending
+- Having an option for seeing trending news, could be done by taking the averages of the sites for views/hour and if a news article is beating it substantially we could determine it's trending
 
 I might work on these changes in the future but seeing as they are not closely related to data engineering I would no be implementing them now, as my focus is elsewhere. 
 
