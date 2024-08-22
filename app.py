@@ -1,5 +1,3 @@
-import os
-import sys
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
@@ -23,7 +21,7 @@ CORS(app)
 @app.route('/')
 def index():
     page = request.args.get('page', 1, type=int)
-    per_page = 10
+    per_page = 20
     articles = Article.query.order_by(Article.published.desc()).paginate(page=page, per_page=per_page, error_out=False)
     return render_template('index.html', articles=articles.items, pagination=articles)
 
@@ -31,7 +29,7 @@ def index():
 def get_news():
     try:
         page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
         articles = Article.query.order_by(Article.published.desc()).paginate(page=page, per_page=per_page, error_out=False)
         return jsonify({
             'articles': [article.to_dict() for article in articles.items],

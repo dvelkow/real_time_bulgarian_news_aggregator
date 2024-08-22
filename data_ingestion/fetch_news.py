@@ -118,9 +118,9 @@ class NewsAggregator:
     @classmethod
     def fetch_all_news(cls):
         fetchers = [
-            Chasa24NewsFetcher('24chasa', 'https://www.24chasa.bg/', 3),
-            DnevnikNewsFetcher('Dnevnik', 'https://www.dnevnik.bg/', 10),
-            FaktiNewsFetcher('Fakti', 'https://fakti.bg/', 3)
+            Chasa24NewsFetcher('24chasa', 'https://www.24chasa.bg/', 10), 
+            DnevnikNewsFetcher('Dnevnik', 'https://www.dnevnik.bg/', 20),  
+            FaktiNewsFetcher('Fakti', 'https://fakti.bg/', 10) 
         ]
         all_articles = []
         for fetcher in fetchers:
