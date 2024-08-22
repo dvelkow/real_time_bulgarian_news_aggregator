@@ -7,7 +7,7 @@ This project is a real-time news aggregator for Bulgarian news sources, with a f
  
 ## Table of Contents
 - [Key Components](#Key-Components)
-- [Structure](#Structure)
+- [Key Functionalities](#Key-Functionalities)
 - [Challenges and Learnings](#Challenges-and-Learnings)
 - [Future Improvements](#Future-Improvements)
 - [Setup Instructions](#Setup-Instructions)
@@ -26,22 +26,15 @@ Here's where it gets interesting from a data engineering perspective:
 
 5. **Automation**: The app automatically fetches new news sources once every X minutes throught the scheduling python library (X is currently 10, but can be lowered so we can get even closer to real-time)
 
-## Structure
 
-### Backend
-- Boots up the dashboard thorugh app.py
-- Manages all database operations through fetch_news.py and process_news.py, ensuring data integrity and efficient querying
-- Triggers scheduled news fetching processes via fetch_news.py, maintaining up-to-date content
-  
-### Frontend 
-- Fetches data from the backend utalizing JavaScript 
-- Displays the latest news articles in a user-friendly interface
-- Implements client-side sorting and filtering of news articles for improved user experience
-- Utilizes React components for a maintainable code structure
+## Key Functionalities
 
-  ## Setup Instructions
+- Aggregates news from multiple Bulgarian news sources including 24chasa, Dnevnik, and Fakti
+- Provides direct links to original news articles for further reading
+- Automatically updates the news database at regular intervals to ensure fresh content
+- Offers a simple and intuitive user interface for browsing the latest news
 
-### Backend Setup
+## Setup
 
 1. **Clone the repository**:
 
@@ -56,7 +49,7 @@ Here's where it gets interesting from a data engineering perspective:
     pip install -r requirements.txt
     ```
 
-3. **Create a `.env` file in the `backend` directory and add your MySQL credentials, u need to have a**:
+3. **Create a `.env` file in the main directory and add your MySQL credentials, u need to have a**:
 
     ```env
     DB_HOST=localhost
@@ -65,30 +58,10 @@ Here's where it gets interesting from a data engineering perspective:
     DB_PASSWORD=your_mysql_password
     ```
 
-4. **Run the Flask application once inside ./backend**:
+4. **Run the Flask application**:
 
     ```sh
     python app.py
-    ```
-
-### Frontend Setup
-
-1. **Open a new terminal window and navigate to the `frontend` directory, from the same path just type**:
-
-    ```sh
-    cd ../frontend
-    ```
-
-2. **Install dependencies**:
-
-    ```sh
-    npm install
-    ```
-
-3. **Start the React application**:
-
-    ```sh
-    npm start
     ```
 
 ## Challenges and Learnings
