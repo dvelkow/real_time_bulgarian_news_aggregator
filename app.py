@@ -1,7 +1,7 @@
 import os
 import sys
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from config import Config
@@ -12,25 +12,20 @@ import schedule
 import time
 import threading
 
-# Load environment variables
 load_dotenv()
 
-# Debug prints
-print(f"DB_HOST: {os.getenv('DB_HOST')}")
-print(f"DB_USER: {os.getenv('DB_USER')}")
-print(f"DB_NAME: {os.getenv('DB_NAME')}")
-print(f"DB_PASSWORD: {'*' * len(os.getenv('DB_PASSWORD'))}") # Mask the password
-
-# Create Flask app
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# Debug print for database URI
-print(f"SQLALCHEMY_DATABASE_URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
-
-# Initialize extensions
 db.init_app(app)
 CORS(app)
+
+@app.route('/')
+def index():
+    page = request.args.get('page', 1, type=int)
+    per_page = 10
+    articles = Article.query.order_by(Article.published.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    return render_template('index.html', articles=articles.items, pagination=articles)
 
 @app.route('/news', methods=['GET'])
 def get_news():
@@ -95,7 +90,7 @@ if __name__ == '__main__':
 
     # Start the scheduler in a separate thread
     scheduler_thread = threading.Thread(target=run_scheduler)
-    scheduler_thread.daemon = True  # This ensures the thread will exit when the main program does
+    scheduler_thread.daemon = True
     scheduler_thread.start()
 
     app.run(debug=True, use_reloader=False)

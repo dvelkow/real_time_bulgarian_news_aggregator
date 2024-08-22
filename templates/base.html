@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Latest News in Bulgaria{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="App">
+        <div class="stars"></div>
+        <div class="twinkling"></div>
+        <header class="App-header">
+            <h1>{% block header %}Latest News in Bulgaria{% endblock %}</h1>
+        </header>
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</body>
+</html>

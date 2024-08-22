@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latest News in Bulgaria</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="App">
+        <div class="stars"></div>
+        <div class="twinkling"></div>
+        <header class="App-header">
+            <h1>Latest News in Bulgaria</h1>
+        </header>
+        <ul class="news-list">
+            {% for article in articles %}
+            <li class="news-item">
+                <a href="{{ article.link }}" target="_blank" rel="noopener noreferrer">
+                    {{ article.title }}
+                </a>
+                <div class="news-item-meta">
+                    {{ article.published.strftime('%d %B %Y, %H:%M') }} - {{ article.source }}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if pagination.pages > 1 %}
+        <div class="pagination">
+            {% for page in pagination.iter_pages() %}
+                {% if page %}
+                    {% if page != pagination.page %}
+                        <a href="{{ url_for('index', page=page) }}">{{ page }}</a>
+                    {% else %}
+                        <strong>{{ page }}</strong>
+                    {% endif %}
+                {% else %}
+                    <span class="ellipsis">…</span>
+                {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
