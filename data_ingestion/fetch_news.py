@@ -7,6 +7,7 @@ from mysql.connector import Error
 from dotenv import load_dotenv
 import os
 from abc import ABC, abstractmethod
+from chatgpt_integration import categorize_articles
 
 load_dotenv()
 
@@ -118,14 +119,23 @@ class NewsAggregator:
     @classmethod
     def fetch_all_news(cls):
         fetchers = [
-            Chasa24NewsFetcher('24chasa', 'https://www.24chasa.bg/', 10), 
+            Chasa24NewsFetcher('24chasa', 'https://www.24chasa.bg/', 20), 
             DnevnikNewsFetcher('Dnevnik', 'https://www.dnevnik.bg/', 20),  
-            FaktiNewsFetcher('Fakti', 'https://fakti.bg/', 10) 
+            FaktiNewsFetcher('Fakti', 'https://fakti.bg/', 20) 
         ]
         all_articles = []
         for fetcher in fetchers:
             all_articles.extend(fetcher.fetch_articles())
-        return all_articles
+        
+        # Categorize articles
+        titles = [article[0] for article in all_articles]
+        categories = categorize_articles(titles)
+        
+        categorized_articles = []
+        for article, category in zip(all_articles, categories):
+            categorized_articles.append(article + (category,))
+        
+        return categorized_articles
 
     @classmethod
     def update_news_database(cls):
@@ -170,7 +180,7 @@ class NewsAggregator:
     @staticmethod
     def insert_articles_to_db(articles, connection):
         cursor = connection.cursor()
-        query = "INSERT INTO articles (title, link, published, source) VALUES (%s, %s, %s, %s)"
+        query = "INSERT INTO articles (title, link, published, source, category) VALUES (%s, %s, %s, %s, %s)"
         try:
             for article in articles:
                 cursor.execute("SELECT COUNT(*) FROM articles WHERE title = %s", (article[0],))
@@ -192,6 +202,7 @@ if __name__ == "__main__":
         print(f"Link: {article[1]}")
         print(f"Published: {article[2]}")
         print(f"Source: {article[3]}")
+        print(f"Category: {article[4]}")
         print("---")
     
     print(f"Updated {NewsAggregator.update_news_database()} articles")

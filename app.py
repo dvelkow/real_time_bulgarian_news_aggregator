@@ -21,20 +21,52 @@ CORS(app)
 @app.route('/')
 def index():
     page = request.args.get('page', 1, type=int)
-    per_page = 20
-    articles = Article.query.order_by(Article.published.desc()).paginate(page=page, per_page=per_page, error_out=False)
-    return render_template('index.html', articles=articles.items, pagination=articles)
+    per_page = 60  
+    
+    all_articles = Article.query.order_by(Article.published.desc()).all()
+    
+    politics = [a for a in all_articles if a.category == 'politics']
+    sports = [a for a in all_articles if a.category == 'sports']
+    others = [a for a in all_articles if a.category == 'others']
+    
+    total_articles = len(all_articles)
+    total_pages = (total_articles + per_page - 1) // per_page
+    
+    start = (page - 1) * per_page
+    end = start + per_page
+    
+    politics_page = politics[start:end]
+    sports_page = sports[start:end]
+    others_page = others[start:end]
+    
+    pagination = {
+        'page': page,
+        'per_page': per_page,
+        'total': total_articles,
+        'pages': total_pages
+    }
+    
+    return render_template('index.html', politics=politics_page, sports=sports_page, others=others_page, pagination=pagination)
 
 @app.route('/news', methods=['GET'])
 def get_news():
     try:
         page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        articles = Article.query.order_by(Article.published.desc()).paginate(page=page, per_page=per_page, error_out=False)
+        per_page = request.args.get('per_page', 60, type=int)
+        all_articles = Article.query.order_by(Article.published.desc()).all()
+        
+        total_articles = len(all_articles)
+        total_pages = (total_articles + per_page - 1) // per_page
+        
+        start = (page - 1) * per_page
+        end = start + per_page
+        
+        articles_page = all_articles[start:end]
+        
         return jsonify({
-            'articles': [article.to_dict() for article in articles.items],
-            'total': articles.total,
-            'pages': articles.pages,
+            'articles': [article.to_dict() for article in articles_page],
+            'total': total_articles,
+            'pages': total_pages,
             'current_page': page
         })
     except Exception as e:
@@ -50,7 +82,8 @@ def fetch_news_route():
                 title=article_data[0],
                 link=article_data[1],
                 published=article_data[2],
-                source=article_data[3]
+                source=article_data[3],
+                category=article_data[4]
             )
             db.session.add(article)
         db.session.commit()
@@ -82,11 +115,9 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"Error creating database tables: {e}")
 
-    # Run initial news fetch
     with app.app_context():
         NewsAggregator.update_news_database()
 
-    # Start the scheduler in a separate thread
     scheduler_thread = threading.Thread(target=run_scheduler)
     scheduler_thread.daemon = True
     scheduler_thread.start()

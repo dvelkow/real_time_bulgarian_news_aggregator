@@ -63,6 +63,32 @@ body {
     z-index: 1;
 }
 
+.news-container {
+    display: flex;
+    justify-content: space-between;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.news-column {
+    width: 30%;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.news-column h2 {
+    color: #4da6ff;
+    margin-bottom: 20px;
+}
+
+.news-list {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
 .news-item {
     background-color: rgba(255, 255, 255, 0.1);
     margin: 10px 0;
