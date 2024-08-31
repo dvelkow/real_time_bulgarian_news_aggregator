@@ -7,7 +7,7 @@ from mysql.connector import Error
 from dotenv import load_dotenv
 import os
 from abc import ABC, abstractmethod
-from chatgpt_integration import categorize_articles
+from transform_classify import categorize_articles
 
 load_dotenv()
 
