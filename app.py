@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, Response
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from config import Config
@@ -9,6 +9,8 @@ from spark_processes import run_spark_processing
 import schedule
 import time
 import threading
+import queue
+import json
 
 load_dotenv()
 
@@ -17,6 +19,8 @@ app.config.from_object(Config)
 
 db.init_app(app)
 CORS(app)
+
+sse_queue = queue.Queue()
 
 @app.route('/')
 def index():
@@ -87,6 +91,11 @@ def fetch_news_route():
             )
             db.session.add(article)
         db.session.commit()
+        if new_articles:
+            try:
+                sse_queue.put_nowait({'type': 'update', 'count': len(new_articles)})
+            except queue.Full:
+                pass
         return jsonify({"message": f"Successfully fetched {len(new_articles)} new articles"}), 200
     except Exception as e:
         print(f"Error fetching new articles: {e}")
@@ -96,10 +105,28 @@ def fetch_news_route():
 def test_route():
     return jsonify({"message": "Test route is working"}), 200
 
+@app.route('/events')
+def sse_events():
+    def generate():
+        while True:
+            try:
+                msg = sse_queue.get(timeout=30)
+                yield f"data: {json.dumps(msg)}\n\n"
+            except queue.Empty:
+                yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+    return Response(generate(), mimetype='text/event-stream')
+
 def run_scheduled_task():
     with app.app_context():
         print("Running scheduled task to update news...")
+        count_before = Article.query.count()
         NewsAggregator.update_news_database()
+        count_after = Article.query.count()
+        if count_after > count_before:
+            try:
+                sse_queue.put_nowait({'type': 'update', 'count': count_after - count_before})
+            except queue.Full:
+                pass
 
 def run_scheduler():
     schedule.every(10).minutes.do(run_scheduled_task)
