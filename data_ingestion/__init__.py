@@ -1,1 +1,0 @@
-from .fetch_news import NewsAggregator, Chasa24NewsFetcher, DnevnikNewsFetcher, FaktiNewsFetcher

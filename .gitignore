@@ -1,22 +1,22 @@
-# Node.js
-node_modules/
-npm-debug.log
-yarn-error.log
-
 # Python
 __pycache__/
 *.py[cod]
 *.pyo
 venv/
+.venv/
+*.egg-info/
+
+# Environment
 .env
 
-# Spark
-*.jar
+# Database
+*.db
 
-# VSCode
+# IDE
 .vscode/
+.idea/
+.claude/
 
-# Miscellaneous
+# OS
 .DS_Store
-.env
-.env
+Thumbs.db

@@ -1,87 +1,89 @@
-## Project Overview
+# Bulgarian News Aggregator
 
-This project is a real-time news aggregator for Bulgarian news sources, with a focus on implementing various data engineering skills.
+![Showcase](showcase.png)
 
-<img src="https://github.com/dvelkow/real_time_bulgarian_news_aggregator/assets/71397644/5a858c6e-4688-4ee8-a086-0b36ee0b6b94" alt="image" width="800"/>
+A real-time news aggregator that collects, classifies, and displays the latest news from 7 major Bulgarian news sources — all in one dashboard.
 
- 
-## Table of Contents
-- [Key Components](#Key-Components)
-- [Key Functionalities](#Key-Functionalities)
-- [Challenges and Learnings](#Challenges-and-Learnings)
-- [Future Improvements](#Future-Improvements)
-- [Setup Instructions](#Setup-Instructions)
+## What It Does
 
-## Key Components
+- **Scrapes 7 sources** — 24chasa, Dnevnik, Fakti, Mediapool, Dir.bg, News.bg, and Sega
+- **Auto-classifies** articles into 8 categories (Politics, Sports, Economy, Tech, Crime, Health, Culture, Other) using weighted keyword matching
+- **Real-time updates** via Server-Sent Events (SSE) — new articles appear without page refresh
+- **Live search** — type any word and instantly filter across all articles
+- **Duplicate detection** — fuzzy title matching (85% similarity threshold) prevents the same story from appearing twice across sources
+- **Draggable columns** — reorder category sections by dragging
+- **Custom sections** — create your own keyword-filtered news columns saved in localStorage
 
-Here's where it gets interesting from a data engineering perspective:
+## Architecture
 
-1. **ETL Pipeline**: Set up a full Extract, Transform, Load pipeline utalizing Python, SQL and Pyspark. Data is extracted from web sources, transformed, and loaded into the database.
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────┐     ┌───────────┐
+│  7 Sources  │────>│   Scrapers   │────>│ Classifier│────>│  SQLite   │
+│  (RSS/HTML) │     │  (parallel)  │     │ (keyword) │     │    DB     │
+└─────────────┘     └──────────────┘     └──────────┘     └─────┬─────┘
+                                                                │
+                    ┌──────────────┐     ┌──────────┐           │
+                    │  SSE Clients │<────│  Flask   │<──────────┘
+                    │  (browsers)  │     │  Server  │
+                    └──────────────┘     └──────────┘
+```
 
-2. **Big Data Processing**: Utalized PySpark for data processing. Although this might be considered an overkill for our current data volume, it makes so the project can easily scale in the future and handle larger batches of data.
+**Scraping strategy:**
+- **RSS feeds** (24chasa, Dnevnik, Mediapool, Sega) — reliable timestamps, clean data, no HTML parsing
+- **HTML scraping** (Fakti, Dir.bg) — BeautifulSoup with timezone-aware date parsing
+- **HTML + article page fetch** (News.bg) — homepage scrape + parallel article page requests for accurate publish times
 
-3. **Data Quality**: Data quality is ensured by cleaning it up with Pyspark through removing special characters, normalizing source names, standardizing timestamps.
+All timestamps are normalized to `Europe/Sofia` timezone.
 
-4. **Scalability**: The architecture is set up so it could easily scale. We can add considerably more news sources or increase scraping frequency, our PySpark processing can handle the load.
+## Tech Stack
 
-5. **Automation**: The app automatically fetches new news sources once every X minutes throught the scheduling python library (X is currently 10, but can be lowered so we can get even closer to real-time)
+| Layer | Technology |
+|-------|-----------|
+| Backend | Flask, SQLAlchemy, SQLite |
+| Scraping | Requests, BeautifulSoup, lxml (RSS) |
+| Real-time | Server-Sent Events (SSE) |
+| Frontend | Jinja2 templates, vanilla JS, CSS |
+| Scheduling | `schedule` library (background thread) |
 
+## Project Structure
 
-## Key Functionalities
-
-- Aggregates news from multiple Bulgarian news sources including 24chasa, Dnevnik, and Fakti
-- Provides direct links to original news articles for further reading
-- Automatically updates the news database at regular intervals to ensure fresh content
-- Offers a simple and intuitive user interface for browsing the latest news
+```
+├── app.py              # Flask app, routes, SSE, scheduler
+├── scrapers.py         # All 7 source scrapers (RSS + HTML)
+├── classifier.py       # Keyword-based article categorization
+├── models.py           # SQLAlchemy Article model
+├── config.py           # App configuration
+├── requirements.txt
+├── templates/
+│   ├── base.html       # Layout, header, search, SSE client JS
+│   └── index.html      # Dashboard grid, category columns
+└── static/css/
+    └── styles.css
+```
 
 ## Setup
 
-1. **Clone the repository**:
+```bash
+git clone https://github.com/dvelkow/real_time_bulgarian_news_aggregator.git
+cd real_time_bulgarian_news_aggregator
 
-    ```sh
-    git clone https://github.com/dvelkow/real_time_bulgarian_news_aggregator.git
-    cd real_time_bulgarian_news_aggregator/backend
-    ```
+pip install -r requirements.txt
 
-2. **install dependencies**:
+python app.py
+```
 
-    ```sh
-    pip install -r requirements.txt
-    ```
+The app starts at `http://127.0.0.1:5000`. On first launch it fetches all sources, creates the SQLite database, and begins the 10-minute auto-refresh cycle.
 
-3. **Create a `.env` file in the main directory and add your MySQL credentials, u need to have a**:
+## How the Classifier Works
 
-    ```env
-    DB_HOST=localhost
-    DB_NAME= db_news /needs to be created first in MYSQL 
-    DB_USER= root
-    DB_PASSWORD=your_mysql_password
-    ```
+Each article title is scored against weighted keyword lists for 8 categories. Bulgarian-language keywords are matched case-insensitively, with multi-word phrases receiving higher weights (e.g., "Конституционен съд" = 3 points for Politics). The highest-scoring category wins; if no keywords match, the article is filed under "Other".
 
-4. **Run the Flask application**:
+## Configuration
 
-    ```sh
-    python app.py
-    ```
+All settings are in `config.py`:
 
-## Challenges and Learnings
-
-Some of the hurdles I stumbled upon while building it:
-
-- Web scraping is rather needy. All news sites have different HTML structures, meaning the fetch function needed to be rewritten for every different site, some were trickier then others. 
-- Balancing between real-time news aggregation and not filling all the slots of the site with spam news, as the sites sometimes tend to post multiple small news one after another.
-- Setting up PySpark locally proved to be... painful.
-
-
-## Future Improvements
-
-There's always room for more:
-
-- Adding different tags based on news headlines and making topics on the site
-- Having an option for seeing trending news, could be done by taking the averages of the sites for views/hour and if a news article is beating it substantially we could determine it's trending
-
-I might work on these changes in the future but seeing as they are not closely related to data engineering I would no be implementing them now, as my focus is elsewhere. 
-
-## Final Thoughts
-
-This project has been a great way to get hands-on experience with various data engineering tools and techniques I have only read/watched about. It's one thing to read about these concepts, but actually implementing them and during the process it felt that's where the real learning happend.
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `FETCH_INTERVAL_MINUTES` | 10 | Auto-refresh interval |
+| `ARTICLES_PER_SOURCE` | 60 | Max articles per scraper |
+| `REQUEST_TIMEOUT` | 15 | HTTP timeout in seconds |

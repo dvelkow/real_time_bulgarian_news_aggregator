@@ -1,152 +1,251 @@
-from dotenv import load_dotenv
-from flask import Flask, jsonify, request, render_template, Response
-from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
-from config import Config
-from models import db, Article
-from data_ingestion.fetch_news import NewsAggregator
-from spark_processes import run_spark_processing
-import schedule
-import time
-import threading
-import queue
+"""
+Bulgarian News Aggregator — Flask application.
+
+Serves a real-time dashboard of categorized Bulgarian news.
+Articles are fetched on a schedule and pushed to clients via SSE.
+"""
+
 import json
+import logging
+import queue
+import threading
+import time
 
-load_dotenv()
+import schedule
+from flask import Flask, Response, jsonify, render_template, request
+from flask_cors import CORS
 
+from config import Config
+from models import Article, db
+from scrapers import fetch_all, save_articles
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
 app = Flask(__name__)
 app.config.from_object(Config)
-
 db.init_app(app)
 CORS(app)
 
-sse_queue = queue.Queue()
+# SSE broadcast channel
+sse_clients: list[queue.Queue] = []
+sse_lock = threading.Lock()
+
+CATEGORIES = ['politics', 'sports', 'economy', 'tech', 'crime', 'health', 'culture', 'other']
+CATEGORY_LABELS = {
+    'politics': 'Политика',
+    'sports': 'Спорт',
+    'economy': 'Икономика',
+    'tech': 'Технологии',
+    'crime': 'Криминални',
+    'health': 'Здраве',
+    'culture': 'Култура',
+    'other': 'Други',
+}
+
+# ---------------------------------------------------------------------------
+# SSE helpers
+# ---------------------------------------------------------------------------
+
+def broadcast_sse(data: dict):
+    """Send an SSE message to all connected clients."""
+    msg = json.dumps(data, ensure_ascii=False)
+    with sse_lock:
+        dead = []
+        for q in sse_clients:
+            try:
+                q.put_nowait(msg)
+            except queue.Full:
+                dead.append(q)
+        for q in dead:
+            sse_clients.remove(q)
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @app.route('/')
 def index():
     page = request.args.get('page', 1, type=int)
-    per_page = 60  
-    
-    all_articles = Article.query.order_by(Article.published.desc()).all()
-    
-    politics = [a for a in all_articles if a.category == 'politics']
-    sports = [a for a in all_articles if a.category == 'sports']
-    others = [a for a in all_articles if a.category == 'others']
-    
-    total_articles = len(all_articles)
-    total_pages = (total_articles + per_page - 1) // per_page
-    
-    start = (page - 1) * per_page
-    end = start + per_page
-    
-    politics_page = politics[start:end]
-    sports_page = sports[start:end]
-    others_page = others[start:end]
-    
-    pagination = {
-        'page': page,
-        'per_page': per_page,
-        'total': total_articles,
-        'pages': total_pages
-    }
-    
-    return render_template('index.html', politics=politics_page, sports=sports_page, others=others_page, pagination=pagination)
+    per_page = 30
 
-@app.route('/news', methods=['GET'])
-def get_news():
+    # Query each category from DB directly (not loading everything into Python)
+    categorized = {}
+    for cat in CATEGORIES:
+        q = Article.query.filter_by(category=cat).order_by(Article.published.desc())
+        categorized[cat] = q.limit(per_page).offset((page - 1) * per_page).all()
+
+    total = Article.query.count()
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    # Stats
+    stats = {}
+    for cat in CATEGORIES:
+        stats[cat] = Article.query.filter_by(category=cat).count()
+
+    source_stats = {}
+    for source_name in ['24chasa', 'Dnevnik', 'Fakti', 'Mediapool', 'Dir.bg', 'News.bg', 'Sega']:
+        source_stats[source_name] = Article.query.filter_by(source=source_name).count()
+
+    return render_template(
+        'index.html',
+        categorized=categorized,
+        category_labels=CATEGORY_LABELS,
+        categories=CATEGORIES,
+        stats=stats,
+        source_stats=source_stats,
+        total=total,
+        page=page,
+        total_pages=total_pages,
+    )
+
+
+@app.route('/api/search')
+def search_articles():
+    query_str = request.args.get('q', '').strip()
+    if not query_str:
+        return jsonify([])
+    
+    # Split keywords by comma and strip whitespace
+    keywords = [k.strip() for k in query_str.split(',') if k.strip()]
+    if not keywords:
+        return jsonify([])
+
+    from sqlalchemy import or_
+    
+    # Build OR filter for all keywords
+    filters = [Article.title.ilike(f'%{k}%') for k in keywords]
+    articles = Article.query.filter(or_(*filters)).order_by(Article.published.desc()).limit(100).all()
+    
+    return jsonify([{
+        'id': a.id,
+        'title': a.title,
+        'link': a.link,
+        'source': a.source,
+        'category': a.category,
+        'published': a.published.strftime('%H:%M')
+    } for a in articles])
+
+
+@app.route('/api/news')
+def api_news():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 60, type=int)
+    category = request.args.get('category')
+
+    q = Article.query.order_by(Article.published.desc())
+    if category and category in CATEGORIES:
+        q = q.filter_by(category=category)
+
+    total = q.count()
+    articles = q.offset((page - 1) * per_page).limit(per_page).all()
+
+    return jsonify({
+        'articles': [a.to_dict() for a in articles],
+        'total': total,
+        'pages': max(1, (total + per_page - 1) // per_page),
+        'current_page': page,
+    })
+
+
+@app.route('/api/stats')
+def api_stats():
+    stats = {cat: Article.query.filter_by(category=cat).count() for cat in CATEGORIES}
+    sources = {}
+    for s in ['24chasa', 'Dnevnik', 'Fakti', 'Mediapool', 'Dir.bg', 'News.bg', 'Sega']:
+        sources[s] = Article.query.filter_by(source=s).count()
+    return jsonify({'categories': stats, 'sources': sources, 'total': Article.query.count()})
+
+
+@app.route('/api/refresh', methods=['POST'])
+def refresh():
+    """Manually trigger a news fetch."""
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 60, type=int)
-        all_articles = Article.query.order_by(Article.published.desc()).all()
-        
-        total_articles = len(all_articles)
-        total_pages = (total_articles + per_page - 1) // per_page
-        
-        start = (page - 1) * per_page
-        end = start + per_page
-        
-        articles_page = all_articles[start:end]
-        
-        return jsonify({
-            'articles': [article.to_dict() for article in articles_page],
-            'total': total_articles,
-            'pages': total_pages,
-            'current_page': page
-        })
+        articles = fetch_all()
+        added = save_articles(db, Article, articles)
+        if added > 0:
+            broadcast_sse({'type': 'update', 'count': added})
+        return jsonify({'message': f'Added {added} new articles', 'added': added})
     except Exception as e:
-        print(f"Error fetching articles: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error("Manual refresh failed: %s", e)
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/fetch-news', methods=['GET'])
-def fetch_news_route():
-    try:
-        new_articles = NewsAggregator.fetch_all_news()
-        for article_data in new_articles:
-            article = Article(
-                title=article_data[0],
-                link=article_data[1],
-                published=article_data[2],
-                source=article_data[3],
-                category=article_data[4]
-            )
-            db.session.add(article)
-        db.session.commit()
-        if new_articles:
-            try:
-                sse_queue.put_nowait({'type': 'update', 'count': len(new_articles)})
-            except queue.Full:
-                pass
-        return jsonify({"message": f"Successfully fetched {len(new_articles)} new articles"}), 200
-    except Exception as e:
-        print(f"Error fetching new articles: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/test', methods=['GET'])
-def test_route():
-    return jsonify({"message": "Test route is working"}), 200
 
 @app.route('/events')
 def sse_events():
-    def generate():
-        while True:
-            try:
-                msg = sse_queue.get(timeout=30)
-                yield f"data: {json.dumps(msg)}\n\n"
-            except queue.Empty:
-                yield f"data: {json.dumps({'type': 'ping'})}\n\n"
-    return Response(generate(), mimetype='text/event-stream')
+    """SSE endpoint — clients connect here for real-time updates."""
+    client_queue = queue.Queue(maxsize=50)
+    with sse_lock:
+        sse_clients.append(client_queue)
 
-def run_scheduled_task():
+    def stream():
+        try:
+            while True:
+                try:
+                    msg = client_queue.get(timeout=25)
+                    yield f"data: {msg}\n\n"
+                except queue.Empty:
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with sse_lock:
+                if client_queue in sse_clients:
+                    sse_clients.remove(client_queue)
+
+    return Response(stream(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+
+# ---------------------------------------------------------------------------
+# Scheduler
+# ---------------------------------------------------------------------------
+
+def scheduled_fetch():
+    """Background job: fetch, save, broadcast."""
     with app.app_context():
-        print("Running scheduled task to update news...")
-        count_before = Article.query.count()
-        NewsAggregator.update_news_database()
-        count_after = Article.query.count()
-        if count_after > count_before:
-            try:
-                sse_queue.put_nowait({'type': 'update', 'count': count_after - count_before})
-            except queue.Full:
-                pass
+        logger.info("Scheduled fetch starting...")
+        try:
+            articles = fetch_all()
+            added = save_articles(db, Article, articles)
+            if added > 0:
+                broadcast_sse({'type': 'update', 'count': added})
+            logger.info("Scheduled fetch done: %d new articles", added)
+        except Exception as e:
+            logger.error("Scheduled fetch failed: %s", e)
+
 
 def run_scheduler():
-    schedule.every(10).minutes.do(run_scheduled_task)
+    schedule.every(Config.FETCH_INTERVAL_MINUTES).minutes.do(scheduled_fetch)
     while True:
         schedule.run_pending()
         time.sleep(1)
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 if __name__ == '__main__':
     with app.app_context():
-        try:
-            db.create_all()
-            print("Database tables created successfully")
-        except Exception as e:
-            print(f"Error creating database tables: {e}")
+        db.create_all()
+        logger.info("Database ready")
 
-    with app.app_context():
-        NewsAggregator.update_news_database()
+        # Initial fetch on startup
+        articles = fetch_all()
+        save_articles(db, Article, articles)
 
-    scheduler_thread = threading.Thread(target=run_scheduler)
-    scheduler_thread.daemon = True
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
 
     app.run(debug=True, use_reloader=False)

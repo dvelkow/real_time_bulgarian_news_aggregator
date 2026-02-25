@@ -1,65 +1,336 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="bg">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Latest News in Bulgaria{% endblock %}</title>
+    <title>{% block title %}Новини от България{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 <body>
-    <div class="App">
-        <div class="stars"></div>
-        <div class="twinkling"></div>
-        <header class="App-header">
-            <h1>{% block header %}Latest News in Bulgaria{% endblock %}</h1>
+    <div class="app">
+        <header class="header">
+            <div class="header-content">
+                <div class="header-logo">
+                    <div class="logo-box">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M4 4H14C16.2091 4 18 5.79086 18 8C18 10.2091 16.2091 12 14 12H4V4Z" fill="white"/>
+                            <path d="M4 12H16C18.2091 12 20 13.7909 20 16C20 18.2091 18.2091 20 16 20H4V12Z" fill="white" fill-opacity="0.8"/>
+                            <circle cx="7" cy="8" r="1.5" fill="#d90429"/>
+                            <circle cx="7" cy="16" r="1.5" fill="#d90429"/>
+                        </svg>
+                    </div>
+                    <div class="header-titles">
+                        <h1>Български Новини</h1>
+                        <p class="subtitle">Агрегатор в реално време</p>
+                    </div>
+                </div>
+                <div class="header-search">
+                    <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input type="text" id="search-input" placeholder="Търси в новините..." autocomplete="off">
+                </div>
+                <div class="header-actions">
+                    <div id="connection-status" class="status-indicator online" title="Свързан в реално време"></div>
+                    <button id="add-custom-btn" class="secondary-btn" title="Добави персонализирана секция">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        <span>Секция</span>
+                    </button>
+                    <button id="refresh-btn" class="refresh-btn" title="Обнови новините">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/>
+                        </svg>
+                        <span>Обнови</span>
+                    </button>
+                </div>
+            </div>
         </header>
-        <main>
+
+        <!-- Custom Section Modal -->
+        <div id="custom-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Нова персонализирана секция</h3>
+                <p>Ще виждате новини, съдържащи тези думи в заглавието.</p>
+                <div class="form-group">
+                    <label>Име на секцията</label>
+                    <input type="text" id="custom-name" placeholder="напр. Футбол, Технологии...">
+                </div>
+                <div class="form-group">
+                    <label>Ключови думи (разделени със запетая)</label>
+                    <input type="text" id="custom-keywords" placeholder="напр. Левски, ЦСКА, трансфер">
+                </div>
+                <div class="modal-actions">
+                    <button id="cancel-modal" class="btn-text">Отказ</button>
+                    <button id="save-custom" class="btn-primary">Създай</button>
+                </div>
+            </div>
+        </div>
+
+        <main class="main-content">
             {% block content %}{% endblock %}
         </main>
+
+        <footer class="footer">
+            <div class="footer-content">
+                <p>&copy; 2024 Български Новини Агрегатор. Последна актуализация: <span id="last-update" class="highlight">--:--</span></p>
+                <p class="drag-hint">Съвет: Можете да пренареждате секциите чрез плъзгане.</p>
+            </div>
+        </footer>
     </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden">Нови статии бяха добавени!</div>
+
     <script>
+        // Custom Sections Management
+        const getCustomSections = () => JSON.parse(localStorage.getItem('custom-news-sections') || '[]');
+        const saveCustomSections = (sections) => localStorage.setItem('custom-news-sections', JSON.stringify(sections));
+
+        async function fetchCustomNews(keywords) {
+            const resp = await fetch(`/api/search?q=${encodeURIComponent(keywords)}`);
+            return await resp.json();
+        }
+
+        function createCustomColumn(section) {
+            const div = document.createElement('div');
+            div.className = 'news-column-card custom-column fade-in';
+            div.dataset.category = `custom-${section.id}`;
+            div.id = `section-${section.id}`;
+            
+            div.innerHTML = `
+                <div class="column-header custom-header">
+                    <div class="drag-handle">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
+                            <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
+                        </svg>
+                    </div>
+                    <h2 class="column-title">${section.name}</h2>
+                    <button class="delete-section" data-id="${section.id}" title="Изтрий секцията">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div class="news-list-wrapper">
+                    <ul class="news-list" id="list-${section.id}">
+                        <li class="loading-item">Зареждане...</li>
+                    </ul>
+                </div>
+            `;
+            return div;
+        }
+
+        async function loadCustomSections() {
+            const grid = document.getElementById('news-grid');
+            if (!grid) return;
+            
+            const sections = getCustomSections();
+            for (const section of sections) {
+                // Remove if already exists to prevent duplicates on manual refresh/update
+                const existing = document.getElementById(`section-${section.id}`);
+                if (existing) existing.remove();
+
+                const column = createCustomColumn(section);
+                grid.insertBefore(column, grid.firstChild);
+                
+                const articles = await fetchCustomNews(section.keywords);
+                updateColumnContent(section.id, articles);
+            }
+
+            // Bind delete buttons... (keep existing logic)
+            document.querySelectorAll('.delete-section').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.stopPropagation(); // Don't trigger drag
+                    const id = btn.dataset.id;
+                    const sections = getCustomSections().filter(s => s.id != id);
+                    saveCustomSections(sections);
+                    document.getElementById(`section-${id}`).remove();
+                };
+            });
+        }
+
+        function updateColumnContent(id, articles) {
+            const list = document.getElementById(`list-${id}`);
+            if (!list) return;
+            list.innerHTML = articles.length ? articles.map(a => `
+                <li class="news-item">
+                    <div class="news-item-content">
+                        <a href="${a.link}" target="_blank" rel="noopener noreferrer" class="news-link">
+                            <span class="news-title">${a.title}</span>
+                        </a>
+                        <div class="news-meta">
+                            <span class="source-tag source-${a.source.toLowerCase()}">${a.source}</span>
+                            <span class="time-tag">${a.published}</span>
+                        </div>
+                    </div>
+                </li>
+            `).join('') : '<li class="empty-msg">Няма открити новини</li>';
+        }
+
+        // SSE logic
         const eventSource = new EventSource('/events');
+        const toast = document.getElementById('toast');
+        const statusIndicator = document.getElementById('connection-status');
+
+        function showToast(message, autoReload = true) {
+            toast.textContent = message;
+            toast.classList.remove('hidden');
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+                if (autoReload) location.reload();
+            }, 3000);
+        }
+
         eventSource.onmessage = async (e) => {
             const data = JSON.parse(e.data);
             if (data.type === 'update') {
-                const response = await fetch('/news?page=1&per_page=200');
-                const result = await response.json();
-                updateNewsDisplay(result.articles);
+                showToast(`Открити са ${data.count} нови статии. Секциите се обновяват...`, true);
             }
         };
-        
-        function updateNewsDisplay(articles) {
-            const politics = articles.filter(a => a.category === 'politics').slice(0, 60);
-            const sports = articles.filter(a => a.category === 'sports').slice(0, 60);
-            const others = articles.filter(a => a.category === 'others').slice(0, 60);
-            
-            updateColumn('Politics', politics);
-            updateColumn('Sports', sports);
-            updateColumn('Others', others);
+
+        eventSource.onopen = () => {
+            statusIndicator.className = 'status-indicator online';
+            statusIndicator.title = 'Свързан в реално време';
+        };
+
+        eventSource.onerror = () => {
+            statusIndicator.className = 'status-indicator offline';
+            statusIndicator.title = 'Връзката е прекъсната. Опит за повторно свързване...';
+        };
+
+        // Manual refresh button
+        const refreshBtn = document.getElementById('refresh-btn');
+        refreshBtn.addEventListener('click', async () => {
+            const spanText = refreshBtn.querySelector('span');
+            const originalText = spanText.textContent;
+            refreshBtn.disabled = true;
+            refreshBtn.classList.add('loading');
+            spanText.textContent = 'Търсене...';
+
+            try {
+                const resp = await fetch('/api/refresh', { method: 'POST' });
+                const data = await resp.json();
+                if (data.added > 0) {
+                    showToast(`Добавени са ${data.added} нови статии.`);
+                } else {
+                    spanText.textContent = 'Няма нови';
+                    setTimeout(() => { 
+                        spanText.textContent = originalText; 
+                        refreshBtn.disabled = false; 
+                        refreshBtn.classList.remove('loading');
+                    }, 2000);
+                }
+            } catch (err) {
+                spanText.textContent = 'Грешка';
+                setTimeout(() => { 
+                    spanText.textContent = originalText; 
+                    refreshBtn.disabled = false; 
+                    refreshBtn.classList.remove('loading');
+                }, 2000);
+            }
+        });
+
+        // Update timestamp
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('bg-BG', { hour: '2-digit', minute: '2-digit' });
+        document.getElementById('last-update').textContent = `Днес в ${timeString}`;
+
+        // ---- Dynamic Search ----
+        const searchInput = document.getElementById('search-input');
+        const newsGrid = document.getElementById('news-grid');
+        const dashboardHeader = document.querySelector('.dashboard-header');
+        const pagination = document.querySelector('.pagination');
+        let searchResultsEl = null;
+        let searchTimer = null;
+        let savedGrid = null;
+
+        function getSearchResultsEl() {
+            if (!searchResultsEl) {
+                searchResultsEl = document.createElement('div');
+                searchResultsEl.id = 'search-results';
+                searchResultsEl.className = 'search-results-container';
+                searchResultsEl.innerHTML = `
+                    <div class="search-results-card">
+                        <div class="column-header search-header">
+                            <h2 class="column-title">Резултати</h2>
+                            <span class="count-badge" id="search-count">0</span>
+                        </div>
+                        <div class="news-list-wrapper">
+                            <ul class="news-list" id="search-list"></ul>
+                        </div>
+                    </div>`;
+            }
+            return searchResultsEl;
         }
-        
-        function updateColumn(category, articles) {
-            const column = Array.from(document.querySelectorAll('.news-column'))
-                .find(col => col.querySelector('h2').textContent === category);
-            if (!column) return;
-            
-            const list = column.querySelector('.news-list');
-            list.innerHTML = articles.map(article => {
-                const date = new Date(article.published);
-                const formattedDate = date.toLocaleDateString('en-GB', { 
-                    day: 'numeric', 
-                    month: 'long', 
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-                return `
-                    <li class="news-item">
-                        <a href="${article.link}" target="_blank" rel="noopener noreferrer">${article.title}</a>
-                        <div class="news-item-meta">${formattedDate} - ${article.source}</div>
-                    </li>
-                `;
-            }).join('');
+
+        function enterSearchMode() {
+            if (dashboardHeader) dashboardHeader.style.display = 'none';
+            if (pagination) pagination.style.display = 'none';
+            if (newsGrid) newsGrid.style.display = 'none';
+            const container = getSearchResultsEl();
+            if (!container.parentNode) {
+                newsGrid.parentNode.insertBefore(container, newsGrid);
+            }
+            container.style.display = '';
+        }
+
+        function exitSearchMode() {
+            if (dashboardHeader) dashboardHeader.style.display = '';
+            if (pagination) pagination.style.display = '';
+            if (newsGrid) newsGrid.style.display = '';
+            const container = getSearchResultsEl();
+            if (container.parentNode) container.style.display = 'none';
+        }
+
+        function renderSearchResults(articles) {
+            const list = document.getElementById('search-list');
+            const count = document.getElementById('search-count');
+            if (!list) return;
+            count.textContent = articles.length;
+            if (articles.length === 0) {
+                list.innerHTML = '<li class="empty-msg">Няма намерени резултати</li>';
+                return;
+            }
+            list.innerHTML = articles.map(a => `
+                <li class="news-item">
+                    <div class="news-item-content">
+                        <a href="${a.link}" target="_blank" rel="noopener noreferrer" class="news-link">
+                            <span class="news-title">${a.title}</span>
+                        </a>
+                        <div class="news-meta">
+                            <span class="source-tag source-${a.source.toLowerCase()}">${a.source}</span>
+                            <span class="time-tag">${a.published}</span>
+                        </div>
+                    </div>
+                </li>
+            `).join('');
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                clearTimeout(searchTimer);
+                const q = searchInput.value.trim();
+                if (!q) {
+                    exitSearchMode();
+                    return;
+                }
+                enterSearchMode();
+                const list = document.getElementById('search-list');
+                if (list) list.innerHTML = '<li class="loading-item">Търсене...</li>';
+                searchTimer = setTimeout(async () => {
+                    try {
+                        const resp = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+                        const articles = await resp.json();
+                        if (searchInput.value.trim()) renderSearchResults(articles);
+                    } catch (e) {
+                        if (list) list.innerHTML = '<li class="empty-msg">Грешка при търсенето</li>';
+                    }
+                }, 250);
+            });
         }
     </script>
 </body>
