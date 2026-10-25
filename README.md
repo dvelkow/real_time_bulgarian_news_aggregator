@@ -29,8 +29,7 @@ A real-time news aggregator that collects, classifies, and displays the latest n
 ```
 
 **Scraping strategy:**
-- **RSS feeds** (24chasa, Dnevnik, Mediapool, Sega) — reliable timestamps, clean data, no HTML parsing
-- **HTML scraping** (Fakti, Dir.bg) — BeautifulSoup with timezone-aware date parsing
+- **RSS feeds** (24chasa, Dnevnik, Fakti, Mediapool, Dir.bg, Sega) — reliable timestamps, clean data, no HTML parsing
 - **HTML + article page fetch** (News.bg) — homepage scrape + parallel article page requests for accurate publish times
 
 All timestamps are normalized to `Europe/Sofia` timezone.
@@ -72,11 +71,11 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The app starts at `http://127.0.0.1:5000`. On first launch it fetches all sources, creates the SQLite database, and begins the 10-minute auto-refresh cycle.
+The app starts at `http://127.0.0.1:5000` (set `PORT=5055` if macOS AirPlay already holds 5000; `FLASK_DEBUG=1` for the debugger). On first launch it fetches all sources, creates the SQLite database, and begins the 10-minute auto-refresh cycle.
 
 ## How the Classifier Works
 
-Each article title is scored against weighted keyword lists for 8 categories. Bulgarian-language keywords are matched case-insensitively, with multi-word phrases receiving higher weights (e.g., "Конституционен съд" = 3 points for Politics). The highest-scoring category wins; if no keywords match, the article is filed under "Other".
+Each article title is scored against weighted keyword lists for 8 categories. Keywords match at the start of a word, case-insensitively (the stem "парламент" hits "парламентарните", but "ски" no longer hits "Испанският"); acronyms such as ЕС, ДПС and AI match only as exact, case-sensitive words. Multi-word phrases receiving higher weights (e.g., "Конституционен съд" = 3 points for Politics). The highest-scoring category wins; if no keywords match, the article is filed under "Other".
 
 ## Configuration
 

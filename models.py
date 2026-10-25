@@ -1,6 +1,20 @@
+import sqlite3
+
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 db = SQLAlchemy()
+
+
+@event.listens_for(Engine, 'connect')
+def _unicode_lower(dbapi_conn, _record):
+    """SQLite's built-in lower() only folds ASCII, so ilike() missed 'Борисов' for 'борисов'.
+    Replace it with Python's Unicode-aware lower() on every SQLite connection."""
+    if isinstance(dbapi_conn, sqlite3.Connection):
+        dbapi_conn.create_function(
+            'lower', 1, lambda s: s.lower() if isinstance(s, str) else s, deterministic=True,
+        )
 
 
 class Article(db.Model):

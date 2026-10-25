@@ -47,11 +47,6 @@ class BaseScraper(ABC):
             logger.error("Failed to fetch %s: %s", self.url, e)
             return None
 
-    def _localize(self, dt: datetime) -> datetime:
-        if dt.tzinfo is None:
-            return SOFIA_TZ.localize(dt)
-        return dt.astimezone(SOFIA_TZ)
-
     def _now(self) -> datetime:
         return datetime.now(SOFIA_TZ)
 
@@ -114,122 +109,9 @@ class RssScraper(BaseScraper):
         return articles
 
 
-class FaktiScraper(BaseScraper):
-    """Scraper for fakti.bg."""
-
-    def fetch(self) -> list[dict]:
-        soup = self._get_soup()
-        if not soup:
-            return []
-
-        articles = []
-        for item in soup.find_all('article', class_='panel selected-ln'):
-            if len(articles) >= self.limit:
-                break
-            title_tag = item.find('span', class_='article-title')
-            if not title_tag:
-                continue
-            title = title_tag.text.strip()
-            a_tag = item.find('a')
-            if not a_tag or not a_tag.get('href'):
-                continue
-            link = self._make_absolute(a_tag['href'])
-            date_el = item.find('div', class_='ndt')
-            published = self._parse_date(date_el.text.strip()) if date_el else self._now()
-            articles.append({
-                'title': title, 'link': link,
-                'published': published, 'source': self.source,
-            })
-
-        return articles
-
-    def _parse_date(self, date_str: str) -> datetime:
-        now = self._now()
-        try:
-            if 'вчера' in date_str:
-                base = now - timedelta(days=1)
-            elif 'днес' in date_str:
-                base = now
-            else:
-                # Try absolute date format: DD.MM.YYYY
-                m = re.search(r'(\d{1,2})\.(\d{1,2})\.(\d{4})', date_str)
-                if m:
-                    day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
-                    # Check if there's a time component too
-                    tm = re.search(r'(\d{1,2}):(\d{2})', date_str)
-                    if tm:
-                        return self._localize(datetime(year, month, day, int(tm.group(1)), int(tm.group(2))))
-                    return self._localize(datetime(year, month, day))
-                return now
-            time_str = date_str.split('в')[-1].strip().replace('ч.', '').strip()
-            t = datetime.strptime(time_str, '%H:%M')
-            return self._localize(
-                now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
-                - (timedelta(days=1) if 'вчера' in date_str else timedelta())
-            )
-        except (ValueError, TypeError) as e:
-            logger.warning("Fakti date parse error '%s': %s", date_str, e)
-            return now
-
-
 class MediapoolScraper(RssScraper):
     """Scraper for mediapool.bg via RSS."""
     pass
-
-
-class DirBgScraper(BaseScraper):
-    """Scraper for dir.bg — timestamp format 'HH:MM | DD.MM.YY'."""
-
-    def fetch(self) -> list[dict]:
-        soup = self._get_soup()
-        if not soup:
-            return []
-
-        articles = []
-        seen_links = set()
-
-        # Both text-news and img-news items share the same inner structure
-        for item in soup.select('div.text-news.list-article, div.img-news'):
-            if len(articles) >= self.limit:
-                break
-
-            title_el = item.select_one('h2.title a') or item.select_one('h3.title a')
-            if not title_el or not title_el.get('href'):
-                continue
-
-            title = title_el.get_text(strip=True)
-            link = title_el['href'].strip()
-            if not title or link in seen_links:
-                continue
-            seen_links.add(link)
-
-            if not link.startswith('http'):
-                link = self._make_absolute(link)
-
-            ts_el = item.select_one('span.timestamp')
-            if not ts_el:
-                continue  # Skip articles without a real publish time
-            published = self._parse_timestamp(ts_el.get_text(strip=True))
-
-            articles.append({
-                'title': title, 'link': link,
-                'published': published, 'source': self.source,
-            })
-
-        return articles
-
-    def _parse_timestamp(self, text: str) -> datetime:
-        """Parse 'HH:MM | DD.MM.YY' format."""
-        try:
-            return self._localize(datetime.strptime(text, '%H:%M | %d.%m.%y'))
-        except ValueError:
-            pass
-        # Fallback: try to extract just a time
-        m = re.search(r'(\d{1,2}):(\d{2})', text)
-        if m:
-            now = self._now()
-            return now.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=0, microsecond=0)
-        return self._now()
 
 
 class NewsBgScraper(BaseScraper):
@@ -331,9 +213,9 @@ class SegaScraper(RssScraper):
 SCRAPERS = [
     RssScraper('24chasa', 'https://www.24chasa.bg/rss'),
     RssScraper('Dnevnik', 'https://www.dnevnik.bg/rss/'),
-    FaktiScraper('Fakti', 'https://fakti.bg/'),
+    RssScraper('Fakti', 'https://fakti.bg/feed'),
     MediapoolScraper('Mediapool', 'https://www.mediapool.bg/rss'),
-    DirBgScraper('Dir.bg', 'https://dir.bg/'),
+    RssScraper('Dir.bg', 'https://dnes.dir.bg/support/cat_rss.php'),
     NewsBgScraper('News.bg', 'https://news.bg/'),
     SegaScraper('Sega', 'https://segabg.com/rss'),
 ]
@@ -376,6 +258,10 @@ def save_articles(db, Article, articles: list[dict]) -> int:
     recent_titles = [a[0] for a in recent_articles]
 
     for a in articles:
+        # Links end up in href attributes — never store javascript: or other schemes
+        if not a['link'].startswith(('http://', 'https://')):
+            continue
+
         # Check exact link match
         exists = db.session.query(Article.id).filter_by(link=a['link']).first()
         if exists:

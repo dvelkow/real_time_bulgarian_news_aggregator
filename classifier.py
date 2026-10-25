@@ -5,6 +5,8 @@ Uses weighted keyword matching with word-boundary awareness for better accuracy.
 Categories: politics, sports, economy, tech, crime, health, culture, other.
 """
 
+import re
+
 # (keyword, weight) — higher weight = stronger signal
 CATEGORY_KEYWORDS = {
     'politics': [
@@ -81,15 +83,32 @@ CATEGORY_KEYWORDS = {
 }
 
 
+def _keyword_pattern(keyword: str) -> re.Pattern:
+    """
+    Acronyms (ЕС, ДПС, AI) match only as exact, case-sensitive words.
+    Everything else matches case-insensitively at the start of a word, so the
+    stem 'парламент' still hits 'парламентарните' but 'ски' no longer hits
+    'Испанският' and 'внос' no longer hits 'активност'.
+    """
+    if keyword.isupper():
+        return re.compile(rf'(?<!\w){re.escape(keyword)}(?!\w)')
+    return re.compile(rf'(?<!\w){re.escape(keyword)}', re.IGNORECASE)
+
+
+CATEGORY_PATTERNS = {
+    category: [(_keyword_pattern(keyword), weight) for keyword, weight in keywords]
+    for category, keywords in CATEGORY_KEYWORDS.items()
+}
+
+
 def classify(title: str) -> str:
     """Classify a single article title into a category."""
-    title_lower = title.lower()
     scores = {}
 
-    for category, keywords in CATEGORY_KEYWORDS.items():
+    for category, patterns in CATEGORY_PATTERNS.items():
         score = 0
-        for keyword, weight in keywords:
-            if keyword.lower() in title_lower:
+        for pattern, weight in patterns:
+            if pattern.search(title):
                 score += weight
         scores[category] = score
 

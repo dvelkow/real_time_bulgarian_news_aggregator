@@ -90,6 +90,27 @@
         const getCustomSections = () => JSON.parse(localStorage.getItem('custom-news-sections') || '[]');
         const saveCustomSections = (sections) => localStorage.setItem('custom-news-sections', JSON.stringify(sections));
 
+        // Scraped titles/links are untrusted: escape everything that goes into innerHTML
+        const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+        const safeLink = (url) => /^https?:\/\//i.test(url || '') ? url : '#';
+
+        function articleItemHtml(a) {
+            return `
+                <li class="news-item">
+                    <div class="news-item-content">
+                        <a href="${escapeHtml(safeLink(a.link))}" target="_blank" rel="noopener noreferrer" class="news-link">
+                            <span class="news-title">${escapeHtml(a.title)}</span>
+                        </a>
+                        <div class="news-meta">
+                            <span class="source-tag source-${escapeHtml(a.source.toLowerCase())}">${escapeHtml(a.source)}</span>
+                            <span class="time-tag">${escapeHtml(a.published)}</span>
+                        </div>
+                    </div>
+                </li>`;
+        }
+
         async function fetchCustomNews(keywords) {
             const resp = await fetch(`/api/search?q=${encodeURIComponent(keywords)}`);
             return await resp.json();
@@ -109,8 +130,8 @@
                             <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
                         </svg>
                     </div>
-                    <h2 class="column-title">${section.name}</h2>
-                    <button class="delete-section" data-id="${section.id}" title="Изтрий секцията">
+                    <h2 class="column-title">${escapeHtml(section.name)}</h2>
+                    <button class="delete-section" data-id="${escapeHtml(section.id)}" title="Изтрий секцията">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                     </button>
                 </div>
@@ -133,14 +154,10 @@
                 const existing = document.getElementById(`section-${section.id}`);
                 if (existing) existing.remove();
 
-                const column = createCustomColumn(section);
-                grid.insertBefore(column, grid.firstChild);
-                
-                const articles = await fetchCustomNews(section.keywords);
-                updateColumnContent(section.id, articles);
+                grid.insertBefore(createCustomColumn(section), grid.firstChild);
             }
+            applyColumnOrder();
 
-            // Bind delete buttons... (keep existing logic)
             document.querySelectorAll('.delete-section').forEach(btn => {
                 btn.onclick = (e) => {
                     e.stopPropagation(); // Don't trigger drag
@@ -148,26 +165,41 @@
                     const sections = getCustomSections().filter(s => s.id != id);
                     saveCustomSections(sections);
                     document.getElementById(`section-${id}`).remove();
+                    saveColumnOrder();
                 };
             });
+
+            await Promise.all(sections.map(async (section) => {
+                updateColumnContent(section.id, await fetchCustomNews(section.keywords));
+            }));
         }
 
         function updateColumnContent(id, articles) {
             const list = document.getElementById(`list-${id}`);
             if (!list) return;
-            list.innerHTML = articles.length ? articles.map(a => `
-                <li class="news-item">
-                    <div class="news-item-content">
-                        <a href="${a.link}" target="_blank" rel="noopener noreferrer" class="news-link">
-                            <span class="news-title">${a.title}</span>
-                        </a>
-                        <div class="news-meta">
-                            <span class="source-tag source-${a.source.toLowerCase()}">${a.source}</span>
-                            <span class="time-tag">${a.published}</span>
-                        </div>
-                    </div>
-                </li>
-            `).join('') : '<li class="empty-msg">Няма открити новини</li>';
+            list.innerHTML = articles.length
+                ? articles.map(articleItemHtml).join('')
+                : '<li class="empty-msg">Няма открити новини</li>';
+        }
+
+        // Column order (category + custom), persisted per browser so it survives the auto-reload
+        const COLUMN_ORDER_KEY = 'news-column-order';
+
+        function saveColumnOrder() {
+            const grid = document.getElementById('news-grid');
+            if (!grid) return;
+            const order = [...grid.children].map(el => el.dataset.category).filter(Boolean);
+            localStorage.setItem(COLUMN_ORDER_KEY, JSON.stringify(order));
+        }
+
+        function applyColumnOrder() {
+            const grid = document.getElementById('news-grid');
+            if (!grid) return;
+            // Columns missing from the saved order (e.g. a just-created section) stay in front
+            for (const cat of JSON.parse(localStorage.getItem(COLUMN_ORDER_KEY) || '[]')) {
+                const el = grid.querySelector(`:scope > [data-category="${CSS.escape(cat)}"]`);
+                if (el) grid.appendChild(el);
+            }
         }
 
         // SSE logic
@@ -295,19 +327,7 @@
                 list.innerHTML = '<li class="empty-msg">Няма намерени резултати</li>';
                 return;
             }
-            list.innerHTML = articles.map(a => `
-                <li class="news-item">
-                    <div class="news-item-content">
-                        <a href="${a.link}" target="_blank" rel="noopener noreferrer" class="news-link">
-                            <span class="news-title">${a.title}</span>
-                        </a>
-                        <div class="news-meta">
-                            <span class="source-tag source-${a.source.toLowerCase()}">${a.source}</span>
-                            <span class="time-tag">${a.published}</span>
-                        </div>
-                    </div>
-                </li>
-            `).join('');
+            list.innerHTML = articles.map(articleItemHtml).join('');
         }
 
         if (searchInput) {
@@ -331,6 +351,47 @@
                     }
                 }, 250);
             });
+        }
+
+        // ---- Custom section modal ----
+        const customModal = document.getElementById('custom-modal');
+        const customName = document.getElementById('custom-name');
+        const customKeywords = document.getElementById('custom-keywords');
+
+        const openModal = () => { customModal.classList.remove('hidden'); customName.focus(); };
+        const closeModal = () => {
+            customModal.classList.add('hidden');
+            customName.value = '';
+            customKeywords.value = '';
+        };
+
+        document.getElementById('add-custom-btn').addEventListener('click', openModal);
+        document.getElementById('cancel-modal').addEventListener('click', closeModal);
+        customModal.addEventListener('click', (e) => { if (e.target === customModal) closeModal(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !customModal.classList.contains('hidden')) closeModal();
+        });
+        document.getElementById('save-custom').addEventListener('click', () => {
+            const name = customName.value.trim();
+            const keywords = customKeywords.value.trim();
+            if (!name || !keywords) return;
+            saveCustomSections([...getCustomSections(), { id: Date.now(), name, keywords }]);
+            closeModal();
+            loadCustomSections();
+        });
+
+        // ---- Init: draggable columns + saved custom sections ----
+        if (newsGrid) {
+            if (window.Sortable) {
+                Sortable.create(newsGrid, {
+                    handle: '.drag-handle',
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    onEnd: saveColumnOrder,
+                });
+            }
+            applyColumnOrder();
+            loadCustomSections();
         }
     </script>
 </body>

@@ -11,6 +11,7 @@ class Config:
     FETCH_INTERVAL_MINUTES = 10
     ARTICLES_PER_SOURCE = 60
     REQUEST_TIMEOUT = 15
+    REFRESH_COOLDOWN_SECONDS = 60  # min gap between manual /api/refresh fetches
     USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "

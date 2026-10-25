@@ -7,13 +7,13 @@ Articles are fetched on a schedule and pushed to clients via SSE.
 
 import json
 import logging
+import os
 import queue
 import threading
 import time
 
 import schedule
 from flask import Flask, Response, jsonify, render_template, request
-from flask_cors import CORS
 
 from config import Config
 from models import Article, db
@@ -34,11 +34,14 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
-CORS(app)
 
 # SSE broadcast channel
 sse_clients: list[queue.Queue] = []
 sse_lock = threading.Lock()
+
+# One fetch at a time — the scheduler and /api/refresh must not write concurrently
+fetch_lock = threading.Lock()
+last_fetch_at: float | None = None
 
 CATEGORIES = ['politics', 'sports', 'economy', 'tech', 'crime', 'health', 'culture', 'other']
 CATEGORY_LABELS = {
@@ -70,13 +73,28 @@ def broadcast_sse(data: dict):
             sse_clients.remove(q)
 
 
+def run_fetch(blocking: bool = True) -> int | None:
+    """Fetch, save, broadcast. Returns new-article count, or None if a fetch is already running."""
+    global last_fetch_at
+    if not fetch_lock.acquire(blocking=blocking):
+        return None
+    try:
+        added = save_articles(db, Article, fetch_all())
+        last_fetch_at = time.monotonic()
+    finally:
+        fetch_lock.release()
+    if added > 0:
+        broadcast_sse({'type': 'update', 'count': added})
+    return added
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 @app.route('/')
 def index():
-    page = request.args.get('page', 1, type=int)
+    page = max(1, request.args.get('page', 1, type=int))
     per_page = 30
 
     # Query each category from DB directly (not loading everything into Python)
@@ -139,8 +157,8 @@ def search_articles():
 
 @app.route('/api/news')
 def api_news():
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 60, type=int)
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = min(max(1, request.args.get('per_page', 60, type=int)), 100)
     category = request.args.get('category')
 
     q = Article.query.order_by(Article.published.desc())
@@ -169,16 +187,20 @@ def api_stats():
 
 @app.route('/api/refresh', methods=['POST'])
 def refresh():
-    """Manually trigger a news fetch."""
+    """Manually trigger a news fetch. Rate-limited, since each call hits every source."""
+    if last_fetch_at is not None:
+        wait = Config.REFRESH_COOLDOWN_SECONDS - (time.monotonic() - last_fetch_at)
+        if wait > 0:
+            return (jsonify({'message': 'Fetched recently', 'added': 0}), 429,
+                    {'Retry-After': str(int(wait) + 1)})
     try:
-        articles = fetch_all()
-        added = save_articles(db, Article, articles)
-        if added > 0:
-            broadcast_sse({'type': 'update', 'count': added})
-        return jsonify({'message': f'Added {added} new articles', 'added': added})
+        added = run_fetch(blocking=False)
     except Exception as e:
         logger.error("Manual refresh failed: %s", e)
         return jsonify({'error': str(e)}), 500
+    if added is None:
+        return jsonify({'message': 'Fetch already running', 'added': 0}), 429
+    return jsonify({'message': f'Added {added} new articles', 'added': added})
 
 
 @app.route('/events')
@@ -216,10 +238,7 @@ def scheduled_fetch():
     with app.app_context():
         logger.info("Scheduled fetch starting...")
         try:
-            articles = fetch_all()
-            added = save_articles(db, Article, articles)
-            if added > 0:
-                broadcast_sse({'type': 'update', 'count': added})
+            added = run_fetch()
             logger.info("Scheduled fetch done: %d new articles", added)
         except Exception as e:
             logger.error("Scheduled fetch failed: %s", e)
@@ -242,10 +261,10 @@ if __name__ == '__main__':
         logger.info("Database ready")
 
         # Initial fetch on startup
-        articles = fetch_all()
-        save_articles(db, Article, articles)
+        run_fetch()
 
     scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
     scheduler_thread.start()
 
-    app.run(debug=True, use_reloader=False)
+    # Debug mode (Werkzeug debugger = remote code execution) only via FLASK_DEBUG=1
+    app.run(port=int(os.environ.get('PORT', 5000)), use_reloader=False)
