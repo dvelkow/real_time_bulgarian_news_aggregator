@@ -6,14 +6,14 @@
 <div class="dashboard-header">
     <div class="stats-glass-panel">
         <div class="stat-main">
-            <span class="stat-number highlight-text">{{ total }}</span>
+            <span class="stat-number highlight-text" id="stat-total">{{ total }}</span>
             <span class="stat-label">Общо Статии</span>
         </div>
         <div class="stat-divider"></div>
         <div class="stat-categories">
             {% for cat in categories %}
             <div class="stat-item">
-                <span class="stat-number">{{ stats[cat] }}</span>
+                <span class="stat-number" data-stat-category="{{ cat }}">{{ stats[cat] }}</span>
                 <span class="stat-label">{{ category_labels[cat] }}</span>
             </div>
             {% endfor %}
@@ -26,17 +26,16 @@
             {% for source, count in source_stats.items() %}
             <span class="source-badge">
                 <span class="source-name">{{ source }}</span>
-                <span class="source-count">{{ count }}</span>
+                <span class="source-count" data-stat-source="{{ source }}">{{ count }}</span>
             </span>
             {% endfor %}
         </div>
     </div>
 </div>
 
-{# News Grid #}
+{# News Grid — every category is rendered, so live updates always have a column to land in #}
 <div id="news-grid" class="news-masonry">
     {% for cat in categories %}
-    {% if categorized[cat] %}
     <div class="news-column-card fade-in" data-category="{{ cat }}">
         <div class="column-header cat-{{ cat }}">
             <div class="drag-handle">
@@ -52,59 +51,34 @@
         <div class="news-list-wrapper">
             <ul class="news-list">
                 {% for article in categorized[cat] %}
-                <li class="news-item">
+                <li class="news-item" data-id="{{ article.id }}" data-published="{{ article.published_iso }}">
                     <div class="news-item-content">
                         <a href="{{ article.link }}" target="_blank" rel="noopener noreferrer" class="news-link">
                             <span class="news-title">{{ article.title }}</span>
                         </a>
                         <div class="news-meta">
                             <span class="source-tag source-{{ article.source|lower }}">{{ article.source }}</span>
-                            <span class="time-tag">
-                                {{ article.published.strftime('%H:%M') }}
-                            </span>
+                            <span class="time-tag">{{ article.published|published }}</span>
                         </div>
+                        {% if article.duplicates %}
+                        <div class="also-in">също в:
+                            {% for dup in article.duplicates -%}
+                            <a href="{{ dup.link }}" target="_blank" rel="noopener noreferrer">{{ dup.source }}</a>{% if not loop.last %}, {% endif %}
+                            {%- endfor %}
+                        </div>
+                        {% endif %}
                     </div>
                 </li>
+                {% else %}
+                <li class="empty-msg">Няма новини</li>
                 {% endfor %}
             </ul>
+            {% if stats[cat] > categorized[cat]|length %}
+            <button class="load-more" data-category="{{ cat }}" data-page-size="{{ column_size }}">Покажи още</button>
+            {% endif %}
         </div>
     </div>
-    {% endif %}
     {% endfor %}
 </div>
-
-{# Pagination #}
-{% if total_pages > 1 %}
-<nav class="pagination glass-pagination">
-    {% if page > 1 %}
-    <a href="?page={{ page - 1 }}" class="page-nav prev-page">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M15 18l-6-6 6-6" />
-        </svg>
-        Предишна
-    </a>
-    {% endif %}
-
-    <div class="page-numbers">
-        {% for p in range(1, total_pages + 1) %}
-        {% if p == page %}
-        <span class="page-current active">{{ p }}</span>
-        {% elif p <= 3 or p> total_pages - 3 or (p >= page - 2 and p <= page + 2) %} <a href="?page={{ p }}"
-                class="page-link">{{ p }}</a>
-                {% elif p == 4 or p == total_pages - 3 %}
-                <span class="ellipsis">...</span>
-                {% endif %}
-                {% endfor %}
-    </div>
-
-    {% if page < total_pages %} <a href="?page={{ page + 1 }}" class="page-nav next-page">
-        Следваща
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 18l6-6-6-6" />
-        </svg>
-        </a>
-        {% endif %}
-</nav>
-{% endif %}
 
 {% endblock %}

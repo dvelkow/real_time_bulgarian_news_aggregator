@@ -8,11 +8,13 @@ A real-time news aggregator that collects, classifies, and displays the latest n
 
 - **Scrapes 7 sources** — 24chasa, Dnevnik, Fakti, Mediapool, Dir.bg, News.bg, and Sega
 - **Auto-classifies** articles into 8 categories (Politics, Sports, Economy, Tech, Crime, Health, Culture, Other) using weighted keyword matching
-- **Real-time updates** via Server-Sent Events (SSE) — new articles appear without page refresh
-- **Live search** — type any word and instantly filter across all articles
-- **Duplicate detection** — fuzzy title matching (85% similarity threshold) prevents the same story from appearing twice across sources
-- **Draggable columns** — reorder category sections by dragging
+- **Real-time updates** via Server-Sent Events (SSE) — new articles slide into their columns without a page reload
+- **Live search** — type any word and instantly filter across all articles (case-insensitive, Cyrillic included)
+- **Duplicate grouping** — fuzzy title matching (85% similarity) shows a story once, with the other sources listed under it as "също в: …"
+- **Per-column "Покажи още"** — each category loads further back on its own
+- **Draggable columns** — reorder category sections by dragging; the order is remembered per browser
 - **Custom sections** — create your own keyword-filtered news columns saved in localStorage
+- **Retention** — articles older than 30 days are purged automatically
 
 ## Architecture
 
@@ -30,7 +32,7 @@ A real-time news aggregator that collects, classifies, and displays the latest n
 
 **Scraping strategy:**
 - **RSS feeds** (24chasa, Dnevnik, Fakti, Mediapool, Dir.bg, Sega) — reliable timestamps, clean data, no HTML parsing
-- **HTML + article page fetch** (News.bg) — homepage scrape + parallel article page requests for accurate publish times
+- **HTML + article page fetch** (News.bg) — homepage scrape + parallel article page requests for accurate publish times (only for links not already stored)
 
 All timestamps are normalized to `Europe/Sofia` timezone.
 
@@ -43,16 +45,21 @@ All timestamps are normalized to `Europe/Sofia` timezone.
 | Real-time | Server-Sent Events (SSE) |
 | Frontend | Jinja2 templates, vanilla JS, CSS |
 | Scheduling | `schedule` library (background thread) |
+| Production | gunicorn (1 worker, threads), Docker |
+| Tests | pytest, GitHub Actions |
 
 ## Project Structure
 
 ```
 ├── app.py              # Flask app, routes, SSE, scheduler
+├── wsgi.py             # gunicorn entry point
 ├── scrapers.py         # All 7 source scrapers (RSS + HTML)
 ├── classifier.py       # Keyword-based article categorization
 ├── models.py           # SQLAlchemy Article model
 ├── config.py           # App configuration
-├── requirements.txt
+├── requirements.txt    # pinned runtime deps (requirements-dev.txt adds pytest)
+├── Dockerfile
+├── tests/              # unit tests + live smoke test of the sources
 ├── templates/
 │   ├── base.html       # Layout, header, search, SSE client JS
 │   └── index.html      # Dashboard grid, category columns
@@ -71,7 +78,29 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The app starts at `http://127.0.0.1:5000` (set `PORT=5055` if macOS AirPlay already holds 5000; `FLASK_DEBUG=1` for the debugger). On first launch it fetches all sources, creates the SQLite database, and begins the 10-minute auto-refresh cycle.
+The app starts at `http://127.0.0.1:5000` (set `PORT=5055` if macOS AirPlay already holds 5000; `FLASK_DEBUG=1` for the debugger). On first launch it creates the SQLite database, fetches all sources in the background, and begins the 10-minute auto-refresh cycle.
+
+### Production
+
+```bash
+gunicorn --workers 1 --threads 32 --bind 0.0.0.0:8000 wsgi:app
+```
+
+Keep one worker and no `--preload`: the SSE client list and the scheduler live in that process, and each open browser tab holds one thread. Or with Docker (the database goes to the `/data` volume):
+
+```bash
+docker build -t bg-news . && docker run -p 8000:8000 -v bg-news-data:/data bg-news
+```
+
+### Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest                    # unit tests, no network
+LIVE=1 pytest -m live     # checks all 7 real sources still parse
+```
+
+CI runs the unit tests on every push and the live check every Monday.
 
 ## How the Classifier Works
 
@@ -86,3 +115,7 @@ All settings are in `config.py`:
 | `FETCH_INTERVAL_MINUTES` | 10 | Auto-refresh interval |
 | `ARTICLES_PER_SOURCE` | 60 | Max articles per scraper |
 | `REQUEST_TIMEOUT` | 15 | HTTP timeout in seconds |
+| `REFRESH_COOLDOWN_SECONDS` | 60 | Minimum gap between manual refreshes |
+| `RETENTION_DAYS` | 30 | Articles older than this are deleted |
+
+Environment variables: `DATABASE_URL` (default `sqlite:///news.db` next to the code), `PORT` and `FLASK_DEBUG` (for `python app.py`).

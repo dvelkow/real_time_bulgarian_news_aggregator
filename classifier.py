@@ -116,8 +116,3 @@ def classify(title: str) -> str:
     if scores[best] == 0:
         return 'other'
     return best
-
-
-def classify_many(titles: list[str]) -> list[str]:
-    """Classify a list of titles. Returns list of category strings."""
-    return [classify(t) for t in titles]

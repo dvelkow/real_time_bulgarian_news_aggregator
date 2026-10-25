@@ -579,59 +579,43 @@ a { color: inherit; text-decoration: none; transition: var(--transition-base); }
 .source-24chasa { color: #d90429; }
 .source-fakti { color: #fb8c00; }
 
-/* ===== Pagination ===== */
-.pagination {
-    margin-top: 50px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 20px;
+/* Other sources covering the same story */
+.also-in {
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--text-light);
 }
 
-.page-numbers {
-    display: flex;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    padding: 6px;
-    gap: 4px;
-}
-
-.page-link, .page-current, .ellipsis {
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
+.also-in a {
+    color: var(--text-muted);
     font-weight: 700;
-    font-size: 0.9rem;
 }
 
-.page-link:hover { background: var(--bg-surface-alt); color: var(--primary-color); }
+.also-in a:hover { color: var(--primary-color); }
 
-.page-current.active {
-    background: var(--primary-color);
-    color: white;
-    box-shadow: var(--shadow-red);
-}
-
-.page-nav {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    padding: 10px 20px;
+/* Per-column "load more" */
+.load-more {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px;
+    background: var(--bg-surface-alt);
+    border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
+    font-family: inherit;
     font-weight: 700;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: var(--transition-base);
 }
 
-.page-nav:hover {
+.load-more:hover {
     border-color: var(--primary-color);
     color: var(--primary-color);
 }
+
+.load-more:disabled { opacity: 0.5; cursor: wait; }
 
 /* ===== Footer ===== */
 .footer {
@@ -712,5 +696,4 @@ a { color: inherit; text-decoration: none; transition: var(--transition-base); }
     .news-masonry { grid-template-columns: 1fr; }
     .news-column-card { height: 500px; }
     .stats-glass-panel { flex-direction: column; gap: 24px; }
-    .pagination { flex-direction: column; }
 }

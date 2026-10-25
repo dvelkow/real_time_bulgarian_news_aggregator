@@ -76,7 +76,7 @@
 
         <footer class="footer">
             <div class="footer-content">
-                <p>&copy; 2024 Български Новини Агрегатор. Последна актуализация: <span id="last-update" class="highlight">--:--</span></p>
+                <p>&copy; {{ current_year }} Български Новини Агрегатор. Последна актуализация: <span id="last-update" class="highlight">{{ last_update }}</span></p>
                 <p class="drag-hint">Съвет: Можете да пренареждате секциите чрез плъзгане.</p>
             </div>
         </footer>
@@ -96,17 +96,23 @@
         ));
         const safeLink = (url) => /^https?:\/\//i.test(url || '') ? url : '#';
 
+        const alsoInLink = (d) =>
+            `<a href="${escapeHtml(safeLink(d.link))}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.source)}</a>`;
+
+        // Keep in sync with the <li> in index.html
         function articleItemHtml(a) {
+            const alsoIn = (a.also_in || []).map(alsoInLink).join(', ');
             return `
-                <li class="news-item">
+                <li class="news-item" data-id="${escapeHtml(a.id)}" data-published="${escapeHtml(a.published)}">
                     <div class="news-item-content">
                         <a href="${escapeHtml(safeLink(a.link))}" target="_blank" rel="noopener noreferrer" class="news-link">
                             <span class="news-title">${escapeHtml(a.title)}</span>
                         </a>
                         <div class="news-meta">
                             <span class="source-tag source-${escapeHtml(a.source.toLowerCase())}">${escapeHtml(a.source)}</span>
-                            <span class="time-tag">${escapeHtml(a.published)}</span>
+                            <span class="time-tag">${escapeHtml(a.time_label)}</span>
                         </div>
+                        ${alsoIn ? `<div class="also-in">също в: ${alsoIn}</div>` : ''}
                     </div>
                 </li>`;
         }
@@ -207,29 +213,87 @@
         const toast = document.getElementById('toast');
         const statusIndicator = document.getElementById('connection-status');
 
-        function showToast(message, autoReload = true) {
+        let sseDropped = false;
+
+        function showToast(message) {
             toast.textContent = message;
             toast.classList.remove('hidden');
             toast.classList.add('show');
-            setTimeout(() => {
-                toast.classList.remove('show');
-                if (autoReload) location.reload();
-            }, 3000);
+            setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        eventSource.onmessage = async (e) => {
-            const data = JSON.parse(e.data);
-            if (data.type === 'update') {
-                showToast(`Открити са ${data.count} нови статии. Секциите се обновяват...`, true);
+        const bumpCounter = (el, by = 1) => { if (el) el.textContent = Number(el.textContent) + by; };
+
+        // Insert by publish time; returns false if it is already shown or belongs below what's loaded
+        function insertArticle(list, a) {
+            if (list.querySelector(`.news-item[data-id="${CSS.escape(String(a.id))}"]`)) return false;
+            const ts = Date.parse(a.published);
+            const next = [...list.querySelectorAll('.news-item')].find(el => Date.parse(el.dataset.published) < ts);
+            const hasMore = !!list.parentElement.querySelector('.load-more');
+            if (!next && hasMore) return false;  // older than everything loaded — "Покажи още" will bring it
+            list.querySelector('.empty-msg')?.remove();
+            const tmp = document.createElement('template');
+            tmp.innerHTML = articleItemHtml(a).trim();
+            const li = tmp.content.firstElementChild;
+            li.classList.add('fade-in');
+            list.insertBefore(li, next || null);
+            return true;
+        }
+
+        // A new source covering a story already on screen: add it to that item's "също в"
+        function addAlsoIn(dup) {
+            document.querySelectorAll(`.news-item[data-id="${CSS.escape(String(dup.duplicate_of))}"]`).forEach(li => {
+                let box = li.querySelector('.also-in');
+                if (box) {
+                    box.insertAdjacentHTML('beforeend', `, ${alsoInLink(dup)}`);
+                } else {
+                    li.querySelector('.news-item-content')
+                        .insertAdjacentHTML('beforeend', `<div class="also-in">също в: ${alsoInLink(dup)}</div>`);
+                }
+            });
+        }
+
+        function applyFetch(data) {
+            document.getElementById('last-update').textContent = data.last_update;
+            const fresh = data.articles.filter(a => !a.duplicate_of);
+            data.articles.forEach(a => bumpCounter(document.querySelector(`[data-stat-source="${CSS.escape(a.source)}"]`)));
+            data.articles.filter(a => a.duplicate_of).forEach(addAlsoIn);
+            if (!fresh.length) return;
+
+            const customSections = getCustomSections();
+            for (const a of fresh) {
+                bumpCounter(document.getElementById('stat-total'));
+                bumpCounter(document.querySelector(`[data-stat-category="${CSS.escape(a.category)}"]`));
+                const column = document.querySelector(`#news-grid > [data-category="${CSS.escape(a.category)}"]`);
+                if (column) {
+                    bumpCounter(column.querySelector('.count-badge'));
+                    insertArticle(column.querySelector('.news-list'), a);
+                }
+                // Same rule as /api/search: case-insensitive substring of any keyword
+                const title = a.title.toLowerCase();
+                for (const s of customSections) {
+                    const keywords = s.keywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+                    const list = document.getElementById(`list-${s.id}`);
+                    if (list && keywords.some(k => title.includes(k))) insertArticle(list, a);
+                }
             }
+            showToast(`Добавени са ${fresh.length} нови статии.`);
+        }
+
+        eventSource.onmessage = (e) => {
+            const data = JSON.parse(e.data);
+            if (data.type === 'fetch') applyFetch(data);
         };
 
         eventSource.onopen = () => {
+            // Articles pushed while we were disconnected are missed — reload once to catch up
+            if (sseDropped) location.reload();
             statusIndicator.className = 'status-indicator online';
             statusIndicator.title = 'Свързан в реално време';
         };
 
         eventSource.onerror = () => {
+            sseDropped = true;
             statusIndicator.className = 'status-indicator offline';
             statusIndicator.title = 'Връзката е прекъсната. Опит за повторно свързване...';
         };
@@ -246,39 +310,24 @@
             try {
                 const resp = await fetch('/api/refresh', { method: 'POST' });
                 const data = await resp.json();
-                if (data.added > 0) {
-                    showToast(`Добавени са ${data.added} нови статии.`);
-                } else {
-                    spanText.textContent = 'Няма нови';
-                    setTimeout(() => { 
-                        spanText.textContent = originalText; 
-                        refreshBtn.disabled = false; 
-                        refreshBtn.classList.remove('loading');
-                    }, 2000);
-                }
+                // New articles themselves arrive over SSE
+                spanText.textContent = data.added > 0 ? `+${data.added}` : 'Няма нови';
             } catch (err) {
                 spanText.textContent = 'Грешка';
-                setTimeout(() => { 
-                    spanText.textContent = originalText; 
-                    refreshBtn.disabled = false; 
-                    refreshBtn.classList.remove('loading');
-                }, 2000);
             }
+            setTimeout(() => {
+                spanText.textContent = originalText;
+                refreshBtn.disabled = false;
+                refreshBtn.classList.remove('loading');
+            }, 2000);
         });
-
-        // Update timestamp
-        const now = new Date();
-        const timeString = now.toLocaleTimeString('bg-BG', { hour: '2-digit', minute: '2-digit' });
-        document.getElementById('last-update').textContent = `Днес в ${timeString}`;
 
         // ---- Dynamic Search ----
         const searchInput = document.getElementById('search-input');
         const newsGrid = document.getElementById('news-grid');
         const dashboardHeader = document.querySelector('.dashboard-header');
-        const pagination = document.querySelector('.pagination');
         let searchResultsEl = null;
         let searchTimer = null;
-        let savedGrid = null;
 
         function getSearchResultsEl() {
             if (!searchResultsEl) {
@@ -301,7 +350,6 @@
 
         function enterSearchMode() {
             if (dashboardHeader) dashboardHeader.style.display = 'none';
-            if (pagination) pagination.style.display = 'none';
             if (newsGrid) newsGrid.style.display = 'none';
             const container = getSearchResultsEl();
             if (!container.parentNode) {
@@ -312,7 +360,6 @@
 
         function exitSearchMode() {
             if (dashboardHeader) dashboardHeader.style.display = '';
-            if (pagination) pagination.style.display = '';
             if (newsGrid) newsGrid.style.display = '';
             const container = getSearchResultsEl();
             if (container.parentNode) container.style.display = 'none';
@@ -378,6 +425,28 @@
             saveCustomSections([...getCustomSections(), { id: Date.now(), name, keywords }]);
             closeModal();
             loadCustomSections();
+        });
+
+        // ---- Per-column "Покажи още" ----
+        document.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.load-more');
+            if (!btn) return;
+            const list = btn.parentElement.querySelector('.news-list');
+            // Offset = what this column already shows, so articles pushed over SSE don't shift paging
+            const offset = list.querySelectorAll('.news-item').length;
+            btn.disabled = true;
+            try {
+                const resp = await fetch(`/api/news?category=${encodeURIComponent(btn.dataset.category)}&offset=${offset}&per_page=${btn.dataset.pageSize}`);
+                const data = await resp.json();
+                for (const a of data.articles) {
+                    if (!list.querySelector(`.news-item[data-id="${CSS.escape(String(a.id))}"]`)) {
+                        list.insertAdjacentHTML('beforeend', articleItemHtml(a));
+                    }
+                }
+                if (offset + data.articles.length >= data.total) btn.remove();
+            } finally {
+                btn.disabled = false;
+            }
         });
 
         // ---- Init: draggable columns + saved custom sections ----

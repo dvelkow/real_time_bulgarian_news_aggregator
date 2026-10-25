@@ -7,23 +7,21 @@ Each scraper fetches articles from a specific source, returning a list of dicts:
 The aggregator orchestrates all scrapers, classifies articles, and persists them.
 """
 
+import difflib
 import logging
 import re
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
-import difflib
 
-import pytz
 import requests
 from bs4 import BeautifulSoup
 
 from classifier import classify
-from config import Config
+from config import SOFIA_TZ, Config
 
 logger = logging.getLogger(__name__)
-SOFIA_TZ = pytz.timezone('Europe/Sofia')
 
 
 class BaseScraper(ABC):
@@ -51,8 +49,8 @@ class BaseScraper(ABC):
         return datetime.now(SOFIA_TZ)
 
     @abstractmethod
-    def fetch(self) -> list[dict]:
-        """Return list of article dicts."""
+    def fetch(self, known_links: set[str] = frozenset()) -> list[dict]:
+        """Return list of article dicts. known_links are already stored and may be skipped."""
 
     def _make_absolute(self, href: str) -> str:
         if href.startswith('http'):
@@ -64,7 +62,7 @@ class BaseScraper(ABC):
 class RssScraper(BaseScraper):
     """Generic RSS-based scraper. Works for any site with a standard RSS feed."""
 
-    def fetch(self) -> list[dict]:
+    def fetch(self, known_links: set[str] = frozenset()) -> list[dict]:
         try:
             resp = requests.get(
                 self.url,
@@ -109,17 +107,12 @@ class RssScraper(BaseScraper):
         return articles
 
 
-class MediapoolScraper(RssScraper):
-    """Scraper for mediapool.bg via RSS."""
-    pass
-
-
 class NewsBgScraper(BaseScraper):
     """Scraper for news.bg — fetches article:published_time from article pages."""
 
     _RELATIVE_RE = re.compile(r'(\d+)\s+(минут|час|ден)')
 
-    def fetch(self) -> list[dict]:
+    def fetch(self, known_links: set[str] = frozenset()) -> list[dict]:
         soup = self._get_soup()
         if not soup:
             return []
@@ -142,6 +135,8 @@ class NewsBgScraper(BaseScraper):
             seen_links.add(link)
             if not link.startswith('http'):
                 link = self._make_absolute(link)
+            if link in known_links:
+                continue  # already stored — don't re-fetch its article page
 
             # Use homepage relative time if available
             time_el = topic.select_one('p.time')
@@ -153,6 +148,7 @@ class NewsBgScraper(BaseScraper):
         needs_fetch = [a for a in raw if a['homepage_time'] is None]
         fetched_times = {}
         if needs_fetch:
+            logger.info("News.bg: fetching %d article pages for publish times", len(needs_fetch))
             with ThreadPoolExecutor(max_workers=8) as pool:
                 futures = {pool.submit(self._fetch_article_time, a['link']): a['link'] for a in needs_fetch}
                 for future in as_completed(futures):
@@ -204,33 +200,40 @@ class NewsBgScraper(BaseScraper):
         return None
 
 
-class SegaScraper(RssScraper):
-    """Scraper for segabg.com via RSS."""
-    pass
-
-
 # Registry of all scrapers
 SCRAPERS = [
     RssScraper('24chasa', 'https://www.24chasa.bg/rss'),
     RssScraper('Dnevnik', 'https://www.dnevnik.bg/rss/'),
     RssScraper('Fakti', 'https://fakti.bg/feed'),
-    MediapoolScraper('Mediapool', 'https://www.mediapool.bg/rss'),
+    RssScraper('Mediapool', 'https://www.mediapool.bg/rss'),
     RssScraper('Dir.bg', 'https://dnes.dir.bg/support/cat_rss.php'),
     NewsBgScraper('News.bg', 'https://news.bg/'),
-    SegaScraper('Sega', 'https://segabg.com/rss'),
+    RssScraper('Sega', 'https://segabg.com/rss'),
 ]
 
 
-def fetch_all() -> list[dict]:
-    """Fetch articles from all sources, classify them, return list of dicts."""
+def fetch_all(known_links: set[str] = frozenset()) -> list[dict]:
+    """
+    Fetch articles from all sources in parallel, classify them, return list of dicts.
+    Links in known_links (already stored) and articles past retention are dropped.
+    """
     all_articles = []
-    for scraper in SCRAPERS:
-        try:
-            articles = scraper.fetch()
-            logger.info("Fetched %d articles from %s", len(articles), scraper.source)
-            all_articles.extend(articles)
-        except Exception as e:
-            logger.error("Scraper %s failed: %s", scraper.source, e)
+    with ThreadPoolExecutor(max_workers=len(SCRAPERS)) as pool:
+        futures = [pool.submit(scraper.fetch, known_links) for scraper in SCRAPERS]
+        # Collect in registry order so the same source wins duplicate grouping every run
+        for scraper, future in zip(SCRAPERS, futures):
+            try:
+                articles = future.result()
+                logger.info("Fetched %d articles from %s", len(articles), scraper.source)
+                all_articles.extend(articles)
+            except Exception as e:
+                logger.error("Scraper %s failed: %s", scraper.source, e)
+
+    cutoff = datetime.now(SOFIA_TZ) - timedelta(days=Config.RETENTION_DAYS)
+    all_articles = [
+        a for a in all_articles
+        if a['link'] not in known_links and a['published'] >= cutoff
+    ]
 
     # Classify each article
     for article in all_articles:
@@ -239,64 +242,61 @@ def fetch_all() -> list[dict]:
     return all_articles
 
 
-def save_articles(db, Article, articles: list[dict]) -> int:
+def save_articles(db, Article, articles: list[dict]) -> list:
     """
-    Persist articles to DB using incremental upsert.
-    Uses fuzzy string matching to avoid duplicate news with slightly differentiating titles.
-    Returns number of newly inserted articles.
+    Persist new articles. A story another source already covered in the last 48h
+    (fuzzy title match) is stored as a duplicate of it and shown under it as "също в";
+    a near-identical re-post from the same source is skipped.
+    Returns the newly inserted Article rows.
     """
-    added = 0
-    
-    # Fetch recent article titles (e.g. last 48 hours to limit memory usage)
-    recent_cutoff = datetime.now(SOFIA_TZ) - timedelta(days=2)
-    # The database stores naive datetime for published, so remove tzinfo
-    recent_cutoff_naive = recent_cutoff.replace(tzinfo=None)
-    
-    recent_articles = db.session.query(Article.title).filter(
-        Article.published >= recent_cutoff_naive
+    # The database stores naive Sofia-local datetimes
+    recent_cutoff = (datetime.now(SOFIA_TZ) - timedelta(days=2)).replace(tzinfo=None)
+    candidates = Article.query.filter(
+        Article.published >= recent_cutoff, Article.duplicate_of.is_(None)
     ).all()
-    recent_titles = [a[0] for a in recent_articles]
 
+    added = []
     for a in articles:
         # Links end up in href attributes — never store javascript: or other schemes
         if not a['link'].startswith(('http://', 'https://')):
             continue
 
         # Check exact link match
-        exists = db.session.query(Article.id).filter_by(link=a['link']).first()
-        if exists:
+        if db.session.query(Article.id).filter_by(link=a['link']).first():
             continue
-            
-        # Check fuzzy title match
-        is_fuzzy_duplicate = False
-        new_title = a['title']
-        for existing_title in recent_titles:
-            # difflib SequenceMatcher returns ratio between 0 and 1
-            ratio = difflib.SequenceMatcher(None, new_title, existing_title).ratio()
-            if ratio > 0.85: # If 85% similar or more, it's a duplicate
-                logger.info("Skipped fuzzy duplicate: '%s' matches '%s' (ratio %.2f)", new_title, existing_title, ratio)
-                is_fuzzy_duplicate = True
-                break
-                
-        if is_fuzzy_duplicate:
+
+        # Check fuzzy title match (difflib ratio: 0..1)
+        original = next(
+            (c for c in candidates
+             if difflib.SequenceMatcher(None, a['title'], c.title).ratio() > 0.85),
+            None,
+        )
+        if original is not None and original.source == a['source']:
+            logger.info("Skipped same-source duplicate: '%s' matches '%s'", a['title'], original.title)
             continue
-            
+
         # Convert localized datetime to naive for DB storage
         naive_pub = a['published']
         if naive_pub.tzinfo is not None:
             naive_pub = naive_pub.replace(tzinfo=None)
 
-        db.session.add(Article(
-            title=new_title,
+        article = Article(
+            title=a['title'],
             link=a['link'],
             published=naive_pub,
             source=a['source'],
             category=a['category'],
-        ))
-        # Add to local cache to prevent duplicates within the same batch
-        recent_titles.append(new_title)
-        added += 1
+            original=original,
+        )
+        db.session.add(article)
+        added.append(article)
+        if original is None:
+            # Later articles in this batch can be grouped under it too
+            candidates.append(article)
+        else:
+            logger.info("Grouped '%s' (%s) under '%s' (%s)", a['title'], a['source'], original.title, original.source)
 
     db.session.commit()
-    logger.info("Inserted %d new articles (skipped %d duplicates)", added, len(articles) - added)
+    logger.info("Inserted %d new articles (%d grouped as duplicates)",
+                len(added), sum(1 for a in added if a.original is not None))
     return added

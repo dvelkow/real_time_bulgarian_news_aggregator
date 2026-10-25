@@ -3,6 +3,8 @@ Bulgarian News Aggregator — Flask application.
 
 Serves a real-time dashboard of categorized Bulgarian news.
 Articles are fetched on a schedule and pushed to clients via SSE.
+
+Run locally with `python app.py`; in production with gunicorn via wsgi.py.
 """
 
 import json
@@ -11,13 +13,16 @@ import os
 import queue
 import threading
 import time
+from datetime import datetime, timedelta
 
 import schedule
 from flask import Flask, Response, jsonify, render_template, request
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import selectinload
 
-from config import Config
-from models import Article, db
-from scrapers import fetch_all, save_articles
+from config import SOFIA_TZ, Config
+from models import Article, db, format_published, init_db
+from scrapers import SCRAPERS, fetch_all, save_articles
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -34,6 +39,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 db.init_app(app)
+app.jinja_env.filters['published'] = format_published
 
 # SSE broadcast channel
 sse_clients: list[queue.Queue] = []
@@ -41,7 +47,9 @@ sse_lock = threading.Lock()
 
 # One fetch at a time — the scheduler and /api/refresh must not write concurrently
 fetch_lock = threading.Lock()
-last_fetch_at: float | None = None
+last_fetch_at: float | None = None       # monotonic, for the refresh cooldown
+last_fetch_time: datetime | None = None  # naive Sofia time, shown in the footer
+_jobs_started = False
 
 CATEGORIES = ['politics', 'sports', 'economy', 'tech', 'crime', 'health', 'culture', 'other']
 CATEGORY_LABELS = {
@@ -54,9 +62,11 @@ CATEGORY_LABELS = {
     'culture': 'Култура',
     'other': 'Други',
 }
+SOURCES = [scraper.source for scraper in SCRAPERS]
+COLUMN_SIZE = 30  # articles per dashboard column; "Покажи още" loads the next batch
 
 # ---------------------------------------------------------------------------
-# SSE helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 def broadcast_sse(data: dict):
@@ -73,19 +83,74 @@ def broadcast_sse(data: dict):
             sse_clients.remove(q)
 
 
+def last_update_label() -> str:
+    return format_published(last_fetch_time) if last_fetch_time else '--:--'
+
+
+def stories():
+    """Primary articles only — cross-source duplicates are shown under them as "също в"."""
+    return (Article.query
+            .filter(Article.duplicate_of.is_(None))
+            .options(selectinload(Article.duplicates))
+            .order_by(Article.published.desc(), Article.id.desc()))
+
+
+def count_by(column, primaries_only: bool = True) -> dict:
+    q = db.session.query(column, func.count(Article.id))
+    if primaries_only:
+        q = q.filter(Article.duplicate_of.is_(None))
+    return dict(q.group_by(column).all())
+
+
+def get_stats() -> dict:
+    by_category = count_by(Article.category)
+    by_source = count_by(Article.source, primaries_only=False)
+    return {
+        'categories': {cat: by_category.get(cat, 0) for cat in CATEGORIES},
+        'sources': {source: by_source.get(source, 0) for source in SOURCES},
+        'total': sum(by_category.values()),
+        'last_update': last_update_label(),
+    }
+
+
+def purge_old_articles():
+    """Delete articles past the retention window, plus duplicates grouped under them."""
+    cutoff = (datetime.now(SOFIA_TZ) - timedelta(days=Config.RETENTION_DAYS)).replace(tzinfo=None)
+    old_ids = select(Article.id).where(Article.published < cutoff)
+    deleted = Article.query.filter(
+        or_(Article.published < cutoff, Article.duplicate_of.in_(old_ids))
+    ).delete(synchronize_session=False)
+    db.session.commit()
+    if deleted:
+        logger.info("Purged %d articles older than %d days", deleted, Config.RETENTION_DAYS)
+
+
 def run_fetch(blocking: bool = True) -> int | None:
     """Fetch, save, broadcast. Returns new-article count, or None if a fetch is already running."""
-    global last_fetch_at
+    global last_fetch_at, last_fetch_time
     if not fetch_lock.acquire(blocking=blocking):
         return None
     try:
-        added = save_articles(db, Article, fetch_all())
+        known_links = {link for (link,) in db.session.query(Article.link)}
+        added = save_articles(db, Article, fetch_all(known_links))
+        purge_old_articles()
         last_fetch_at = time.monotonic()
+        last_fetch_time = datetime.now(SOFIA_TZ).replace(tzinfo=None)
+        # Push the rows themselves so open pages update in place instead of reloading
+        payload = {
+            'type': 'fetch',
+            'last_update': last_update_label(),
+            'articles': [a.to_dict() for a in added],
+        }
     finally:
         fetch_lock.release()
-    if added > 0:
-        broadcast_sse({'type': 'update', 'count': added})
-    return added
+    broadcast_sse(payload)
+    return len(added)
+
+
+@app.context_processor
+def inject_footer():
+    return {'last_update': last_update_label(), 'current_year': datetime.now(SOFIA_TZ).year}
 
 
 # ---------------------------------------------------------------------------
@@ -94,79 +159,53 @@ def run_fetch(blocking: bool = True) -> int | None:
 
 @app.route('/')
 def index():
-    page = max(1, request.args.get('page', 1, type=int))
-    per_page = 30
-
-    # Query each category from DB directly (not loading everything into Python)
-    categorized = {}
-    for cat in CATEGORIES:
-        q = Article.query.filter_by(category=cat).order_by(Article.published.desc())
-        categorized[cat] = q.limit(per_page).offset((page - 1) * per_page).all()
-
-    total = Article.query.count()
-    total_pages = max(1, (total + per_page - 1) // per_page)
-
-    # Stats
-    stats = {}
-    for cat in CATEGORIES:
-        stats[cat] = Article.query.filter_by(category=cat).count()
-
-    source_stats = {}
-    for source_name in ['24chasa', 'Dnevnik', 'Fakti', 'Mediapool', 'Dir.bg', 'News.bg', 'Sega']:
-        source_stats[source_name] = Article.query.filter_by(source=source_name).count()
+    categorized = {
+        cat: stories().filter_by(category=cat).limit(COLUMN_SIZE).all()
+        for cat in CATEGORIES
+    }
+    stats = get_stats()
 
     return render_template(
         'index.html',
         categorized=categorized,
         category_labels=CATEGORY_LABELS,
         categories=CATEGORIES,
-        stats=stats,
-        source_stats=source_stats,
-        total=total,
-        page=page,
-        total_pages=total_pages,
+        stats=stats['categories'],
+        source_stats=stats['sources'],
+        total=stats['total'],
+        column_size=COLUMN_SIZE,
     )
 
 
 @app.route('/api/search')
 def search_articles():
-    query_str = request.args.get('q', '').strip()
-    if not query_str:
-        return jsonify([])
-    
     # Split keywords by comma and strip whitespace
-    keywords = [k.strip() for k in query_str.split(',') if k.strip()]
+    keywords = [k.strip() for k in request.args.get('q', '').split(',') if k.strip()]
     if not keywords:
         return jsonify([])
 
-    from sqlalchemy import or_
-    
     # Build OR filter for all keywords
     filters = [Article.title.ilike(f'%{k}%') for k in keywords]
-    articles = Article.query.filter(or_(*filters)).order_by(Article.published.desc()).limit(100).all()
-    
-    return jsonify([{
-        'id': a.id,
-        'title': a.title,
-        'link': a.link,
-        'source': a.source,
-        'category': a.category,
-        'published': a.published.strftime('%H:%M')
-    } for a in articles])
+    articles = stories().filter(or_(*filters)).limit(100).all()
+
+    return jsonify([a.to_dict() for a in articles])
 
 
 @app.route('/api/news')
 def api_news():
     page = max(1, request.args.get('page', 1, type=int))
     per_page = min(max(1, request.args.get('per_page', 60, type=int)), 100)
+    # offset wins over page: the dashboard's "load more" passes how many items it already shows
+    offset = request.args.get('offset', type=int)
+    offset = max(0, offset) if offset is not None else (page - 1) * per_page
     category = request.args.get('category')
 
-    q = Article.query.order_by(Article.published.desc())
-    if category and category in CATEGORIES:
+    q = stories()
+    if category in CATEGORIES:
         q = q.filter_by(category=category)
 
     total = q.count()
-    articles = q.offset((page - 1) * per_page).limit(per_page).all()
+    articles = q.offset(offset).limit(per_page).all()
 
     return jsonify({
         'articles': [a.to_dict() for a in articles],
@@ -178,11 +217,7 @@ def api_news():
 
 @app.route('/api/stats')
 def api_stats():
-    stats = {cat: Article.query.filter_by(category=cat).count() for cat in CATEGORIES}
-    sources = {}
-    for s in ['24chasa', 'Dnevnik', 'Fakti', 'Mediapool', 'Dir.bg', 'News.bg', 'Sega']:
-        sources[s] = Article.query.filter_by(source=s).count()
-    return jsonify({'categories': stats, 'sources': sources, 'total': Article.query.count()})
+    return jsonify(get_stats())
 
 
 @app.route('/api/refresh', methods=['POST'])
@@ -212,6 +247,7 @@ def sse_events():
 
     def stream():
         try:
+            yield ": connected\n\n"  # flush headers now so the browser's onopen fires right away
             while True:
                 try:
                     msg = client_queue.get(timeout=25)
@@ -245,10 +281,24 @@ def scheduled_fetch():
 
 
 def run_scheduler():
+    scheduled_fetch()  # initial fetch, without holding up server start
     schedule.every(Config.FETCH_INTERVAL_MINUTES).minutes.do(scheduled_fetch)
     while True:
         schedule.run_pending()
         time.sleep(1)
+
+
+def start_background_jobs():
+    """Prepare the DB and start the fetch scheduler. Call once per process:
+    from __main__ below, or from wsgi.py under gunicorn (single worker, no --preload)."""
+    global _jobs_started
+    if _jobs_started:
+        return
+    _jobs_started = True
+    with app.app_context():
+        init_db()
+        logger.info("Database ready")
+    threading.Thread(target=run_scheduler, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -256,15 +306,6 @@ def run_scheduler():
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        logger.info("Database ready")
-
-        # Initial fetch on startup
-        run_fetch()
-
-    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
-    scheduler_thread.start()
-
+    start_background_jobs()
     # Debug mode (Werkzeug debugger = remote code execution) only via FLASK_DEBUG=1
     app.run(port=int(os.environ.get('PORT', 5000)), use_reloader=False)
