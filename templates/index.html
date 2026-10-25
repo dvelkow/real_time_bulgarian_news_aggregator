@@ -1,84 +1,78 @@
 {% extends "base.html" %}
 
-{% block content %}
+{% block nav %}
+{% for cat in categories %}
+<a href="#{{ cat }}">{{ category_labels[cat]|lower }}</a>{% if not loop.last %}<span class="sep">|</span>{% endif %}
+{% endfor %}
+{% endblock %}
 
-{# Dashboard Header containing Stats #}
-<div class="dashboard-header">
-    <div class="stats-glass-panel">
-        <div class="stat-main">
-            <span class="stat-number highlight-text" id="stat-total">{{ total }}</span>
-            <span class="stat-label">Общо Статии</span>
-        </div>
-        <div class="stat-divider"></div>
-        <div class="stat-categories">
-            {% for cat in categories %}
-            <div class="stat-item">
-                <span class="stat-number" data-stat-category="{{ cat }}">{{ stats[cat] }}</span>
-                <span class="stat-label">{{ category_labels[cat] }}</span>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
+{% block dateline %}
+<span class="sep">·</span>
+<span><b id="stat-total">{{ total }}</b> статии от {{ source_stats|length }} източника</span>
+{% endblock %}
 
-    <div class="source-glass-panel">
-        <h3 class="panel-title">Източници</h3>
-        <div class="source-tags">
-            {% for source, count in source_stats.items() %}
-            <span class="source-badge">
-                <span class="source-name">{{ source }}</span>
-                <span class="source-count" data-stat-source="{{ source }}">{{ count }}</span>
-            </span>
-            {% endfor %}
-        </div>
-    </div>
+{% block filterbar %}
+<div class="filterbar">
+    <span class="filter-group">
+        покажи:
+        <button class="filter" type="button" data-filter="all">всички</button><span class="sep">|</span>
+        <button class="filter" type="button" data-filter="new">нови <span class="filter-count" id="count-new"></span></button><span class="sep">|</span>
+        <button class="filter" type="button" data-filter="important">важни <span class="filter-count" id="count-important"></span></button>
+    </span>
+    <span class="hot-group" title="Имена, които поне 3 медии ползват в заглавия за последните 12 часа">
+        горещо: <span id="hot-words"></span>
+    </span>
+    <button id="edit-words-btn" class="filter" type="button">✎ мои думи</button>
 </div>
+<script id="importance-data" type="application/json">{{ importance|tojson }}</script>
+{% endblock %}
 
-{# News Grid — every category is rendered, so live updates always have a column to land in #}
-<div id="news-grid" class="news-masonry">
+{% block content %}
+<p id="filter-empty" class="filter-empty-msg" hidden>Нищо не отговаря на филтъра — опитайте „всички“.</p>
+{# Every category is rendered, so live updates always have a section to land in #}
+<div id="news-grid" class="sections">
     {% for cat in categories %}
-    <div class="news-column-card fade-in" data-category="{{ cat }}">
-        <div class="column-header cat-{{ cat }}">
-            <div class="drag-handle">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
-                    <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
-                </svg>
-            </div>
-            <h2 class="column-title">{{ category_labels[cat] }}</h2>
-            <span class="count-badge">{{ stats[cat] }}</span>
-        </div>
-
-        <div class="news-list-wrapper">
-            <ul class="news-list">
-                {% for article in categorized[cat] %}
-                <li class="news-item" data-id="{{ article.id }}" data-published="{{ article.published_iso }}">
-                    <div class="news-item-content">
-                        <a href="{{ article.link }}" target="_blank" rel="noopener noreferrer" class="news-link">
-                            <span class="news-title">{{ article.title }}</span>
-                        </a>
-                        <div class="news-meta">
-                            <span class="source-tag source-{{ article.source|lower }}">{{ article.source }}</span>
-                            <span class="time-tag">{{ article.published|published }}</span>
-                        </div>
-                        {% if article.duplicates %}
-                        <div class="also-in">също в:
-                            {% for dup in article.duplicates -%}
+    <section class="section" id="{{ cat }}" data-category="{{ cat }}" style="--i: {{ loop.index0 }}">
+        <h2 class="rubric">
+            <span class="drag-handle" title="Премести секцията">⠿</span>
+            <span class="rubric-name">{{ category_labels[cat] }}</span>
+            <span class="rubric-count" data-stat-category="{{ cat }}">{{ stats[cat] }}</span>
+        </h2>
+        <ol class="news-list">
+            {% for article in categorized[cat] %}
+            {# Keep in sync with articleItemHtml() in base.html #}
+            <li class="news-item" data-id="{{ article.id }}" data-published="{{ article.published_iso }}">
+                <div class="item-body">
+                    <a class="title" href="{{ article.link }}" target="_blank" rel="noopener noreferrer">{{ article.title }}</a>
+                    <span class="site">({{ article.source }})</span>
+                    <div class="subtext">
+                        <time class="time" datetime="{{ article.published_iso }}" data-label="{{ article.published|published }}" title="{{ article.published.strftime('%d.%m.%Y %H:%M') }}">{{ article.published|published }}</time>
+                        {%- if article.duplicates %}
+                        <span class="sep">|</span>
+                        <span class="also-in">също в: {% for dup in article.duplicates -%}
                             <a href="{{ dup.link }}" target="_blank" rel="noopener noreferrer">{{ dup.source }}</a>{% if not loop.last %}, {% endif %}
-                            {%- endfor %}
-                        </div>
-                        {% endif %}
+                        {%- endfor %}</span>
+                        {%- endif %}
                     </div>
-                </li>
-                {% else %}
-                <li class="empty-msg">Няма новини</li>
-                {% endfor %}
-            </ul>
-            {% if stats[cat] > categorized[cat]|length %}
-            <button class="load-more" data-category="{{ cat }}" data-page-size="{{ column_size }}">Покажи още</button>
-            {% endif %}
-        </div>
-    </div>
+                </div>
+            </li>
+            {% else %}
+            <li class="empty-msg">няма новини</li>
+            {% endfor %}
+        </ol>
+        {% if stats[cat] > categorized[cat]|length %}
+        <button class="load-more" type="button" data-category="{{ cat }}" data-page-size="{{ column_size }}">още ›</button>
+        {% endif %}
+    </section>
     {% endfor %}
 </div>
+{% endblock %}
 
+{% block footer %}
+<p class="sources">
+    източници:
+    {% for source, count in source_stats.items() %}
+    <span class="source">{{ source }} <span class="source-count" data-stat-source="{{ source }}">{{ count }}</span></span>{% if not loop.last %}<span class="sep">|</span>{% endif %}
+    {% endfor %}
+</p>
 {% endblock %}

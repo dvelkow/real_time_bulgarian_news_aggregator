@@ -20,6 +20,7 @@ from flask import Flask, Response, jsonify, render_template, request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
+import importance
 from config import SOFIA_TZ, Config
 from models import Article, db, format_published, init_db
 from scrapers import SCRAPERS, fetch_all, save_articles
@@ -63,7 +64,11 @@ CATEGORY_LABELS = {
     'other': 'Други',
 }
 SOURCES = [scraper.source for scraper in SCRAPERS]
-COLUMN_SIZE = 30  # articles per dashboard column; "Покажи още" loads the next batch
+COLUMN_SIZE = 15  # articles per dashboard section; "още" loads the next batch
+
+WEEKDAYS = ['понеделник', 'вторник', 'сряда', 'четвъртък', 'петък', 'събота', 'неделя']
+MONTHS = ['януари', 'февруари', 'март', 'април', 'май', 'юни',
+          'юли', 'август', 'септември', 'октомври', 'ноември', 'декември']
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -102,6 +107,13 @@ def count_by(column, primaries_only: bool = True) -> dict:
     return dict(q.group_by(column).all())
 
 
+def hot_words() -> list[dict]:
+    """Words several outlets are using right now (see importance.py); duplicates count."""
+    since = (datetime.now(SOFIA_TZ) - timedelta(hours=importance.WINDOW_HOURS)).replace(tzinfo=None)
+    rows = db.session.query(Article.title, Article.source).filter(Article.published >= since).all()
+    return importance.hot_words(rows)
+
+
 def get_stats() -> dict:
     by_category = count_by(Article.category)
     by_source = count_by(Article.source, primaries_only=False)
@@ -110,6 +122,7 @@ def get_stats() -> dict:
         'sources': {source: by_source.get(source, 0) for source in SOURCES},
         'total': sum(by_category.values()),
         'last_update': last_update_label(),
+        'hot_words': hot_words(),
     }
 
 
@@ -141,6 +154,7 @@ def run_fetch(blocking: bool = True) -> int | None:
             'type': 'fetch',
             'last_update': last_update_label(),
             'articles': [a.to_dict() for a in added],
+            'hot_words': hot_words(),
         }
     finally:
         fetch_lock.release()
@@ -149,8 +163,13 @@ def run_fetch(blocking: bool = True) -> int | None:
 
 
 @app.context_processor
-def inject_footer():
-    return {'last_update': last_update_label(), 'current_year': datetime.now(SOFIA_TZ).year}
+def inject_dateline():
+    now = datetime.now(SOFIA_TZ)
+    return {
+        'last_update': last_update_label(),
+        'current_year': now.year,
+        'today_label': f"{WEEKDAYS[now.weekday()]}, {now.day} {MONTHS[now.month - 1]} {now.year} г.",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +193,7 @@ def index():
         source_stats=stats['sources'],
         total=stats['total'],
         column_size=COLUMN_SIZE,
+        importance={'hot': stats['hot_words'], 'urgent': importance.URGENT_WORDS},
     )
 
 

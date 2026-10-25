@@ -72,6 +72,7 @@ def test_stats_count_stories_and_sources(client, make_article):
     ])
 
     stats = client.get('/api/stats').json
+    assert stats['hot_words'] == []  # 'ЦИК' is used by only 2 outlets here
     assert stats['total'] == 2  # the Sega duplicate is not a separate story
     assert stats['categories']['politics'] == 1 and stats['categories']['sports'] == 1
     assert stats['sources']['Sega'] == 2 and stats['sources']['24chasa'] == 1
@@ -84,9 +85,12 @@ def test_index_renders_every_column_with_load_more(client, make_article, monkeyp
     ])
 
     html = client.get('/').get_data(as_text=True)
-    assert html.count('class="news-column-card') == len(app_module.CATEGORIES)
+    assert html.count('<section class="section"') == len(app_module.CATEGORIES)
     assert 'data-category="crime" data-page-size="2"' in html
-    assert 'Няма новини' in html  # empty categories still get a column
+    assert 'няма новини' in html  # empty categories still get a section
+    assert 'logo' not in html
+    assert '<script id="importance-data" type="application/json">' in html
+    assert 'извънредно' in html  # urgent words reach the front end
 
 
 def test_run_fetch_purges_expired_articles(app_ctx, monkeypatch):

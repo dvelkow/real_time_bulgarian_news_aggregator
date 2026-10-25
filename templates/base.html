@@ -3,87 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Новини от България{% endblock %}</title>
+    <title>{% block title %}Български новини{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    {# Sofia Sans — a Bulgarian typeface with proper Bulgarian Cyrillic forms (picked up via lang="bg") #}
+    <link href="https://fonts.googleapis.com/css2?family=Sofia+Sans:wght@400;500;700&family=Sofia+Sans+Extra+Condensed:wght@800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 </head>
 <body>
-    <div class="app">
-        <header class="header">
-            <div class="header-content">
-                <div class="header-logo">
-                    <div class="logo-box">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M4 4H14C16.2091 4 18 5.79086 18 8C18 10.2091 16.2091 12 14 12H4V4Z" fill="white"/>
-                            <path d="M4 12H16C18.2091 12 20 13.7909 20 16C20 18.2091 18.2091 20 16 20H4V12Z" fill="white" fill-opacity="0.8"/>
-                            <circle cx="7" cy="8" r="1.5" fill="#d90429"/>
-                            <circle cx="7" cy="16" r="1.5" fill="#d90429"/>
-                        </svg>
-                    </div>
-                    <div class="header-titles">
-                        <h1>Български Новини</h1>
-                        <p class="subtitle">Агрегатор в реално време</p>
-                    </div>
-                </div>
-                <div class="header-search">
-                    <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <input type="text" id="search-input" placeholder="Търси в новините..." autocomplete="off">
-                </div>
-                <div class="header-actions">
-                    <div id="connection-status" class="status-indicator online" title="Свързан в реално време"></div>
-                    <button id="add-custom-btn" class="secondary-btn" title="Добави персонализирана секция">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                        <span>Секция</span>
-                    </button>
-                    <button id="refresh-btn" class="refresh-btn" title="Обнови новините">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/>
-                        </svg>
-                        <span>Обнови</span>
-                    </button>
-                </div>
-            </div>
-        </header>
-
-        <!-- Custom Section Modal -->
-        <div id="custom-modal" class="modal hidden">
-            <div class="modal-content">
-                <h3>Нова персонализирана секция</h3>
-                <p>Ще виждате новини, съдържащи тези думи в заглавието.</p>
-                <div class="form-group">
-                    <label>Име на секцията</label>
-                    <input type="text" id="custom-name" placeholder="напр. Футбол, Технологии...">
-                </div>
-                <div class="form-group">
-                    <label>Ключови думи (разделени със запетая)</label>
-                    <input type="text" id="custom-keywords" placeholder="напр. Левски, ЦСКА, трансфер">
-                </div>
-                <div class="modal-actions">
-                    <button id="cancel-modal" class="btn-text">Отказ</button>
-                    <button id="save-custom" class="btn-primary">Създай</button>
-                </div>
+    {# The masthead is the flag: white rule, green bar, red rule #}
+    <header class="masthead">
+        <div class="bar">
+            <a class="wordmark" href="/">Български новини</a>
+            <nav class="bar-nav" aria-label="Категории">{% block nav %}{% endblock %}</nav>
+            <div class="bar-tools">
+                <input type="search" id="search-input" placeholder="търси, напр. борисов, вот" autocomplete="off" aria-label="Търси в новините">
+                <button id="add-custom-btn" class="bar-link" type="button" title="Добави секция по ключови думи">+ секция</button>
+                <span class="sep">|</span>
+                <button id="refresh-btn" class="bar-link" type="button" title="Обнови новините"><span>обнови</span></button>
             </div>
         </div>
+    </header>
 
-        <main class="main-content">
-            {% block content %}{% endblock %}
-        </main>
+    <div class="dateline">
+        <span class="today">{{ today_label }}</span>
+        {% block dateline %}{% endblock %}
+        <span class="sep">·</span>
+        <span>обновено <b id="last-update">{{ last_update }}</b></span>
+        <span id="connection-status" class="live" title="Свързан в реално време">на живо</span>
+    </div>
+    {% block filterbar %}{% endblock %}
 
-        <footer class="footer">
-            <div class="footer-content">
-                <p>&copy; {{ current_year }} Български Новини Агрегатор. Последна актуализация: <span id="last-update" class="highlight">{{ last_update }}</span></p>
-                <p class="drag-hint">Съвет: Можете да пренареждате секциите чрез плъзгане.</p>
+    <main class="page">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        {% block footer %}{% endblock %}
+        <p>&copy; {{ current_year }} Български новини · агрегатор в реално време на българските медии</p>
+        <p class="hint">⠿ мести секциите · „+ секция“ добавя ваша по ключови думи · заглавията водят към оригинала</p>
+    </footer>
+
+    <!-- Custom Section Modal -->
+    <div id="custom-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="custom-modal-title">
+        <div class="modal-content">
+            <h3 id="custom-modal-title">Нова секция</h3>
+            <p>Показва новините, в чието заглавие има някоя от думите.</p>
+            <label for="custom-name">име</label>
+            <input type="text" id="custom-name" placeholder="напр. Избори">
+            <label for="custom-keywords">ключови думи, разделени със запетая</label>
+            <input type="text" id="custom-keywords" placeholder="напр. ЦИК, вот, балотаж">
+            <div class="modal-actions">
+                <button id="cancel-modal" class="btn-text" type="button">отказ</button>
+                <button id="save-custom" class="btn-primary" type="button">създай</button>
             </div>
-        </footer>
+        </div>
     </div>
 
-    <!-- Notification Toast -->
-    <div id="toast" class="toast hidden">Нови статии бяха добавени!</div>
+    <!-- Important Words Modal -->
+    <div id="words-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="words-modal-title">
+        <div class="modal-content">
+            <h3 id="words-modal-title">Важни думи</h3>
+            <p>Ограждат се във всички заглавия. „Важни“ показва статиите с оградена дума или история, отразена от 3+ медии.</p>
+            <ul class="legend">
+                <li><mark class="box box-hot">Радев</mark> горещо — име в заглавия на 3+ медии за 12 ч, автоматично</li>
+                <li><mark class="box box-urgent">извънредно</mark> спешно — извънредно, официално, на живо…</li>
+                <li><mark class="box box-mine">Левски</mark> ваше — думите отдолу, запазени в този браузър</li>
+            </ul>
+            <label for="my-words">вашите думи, разделени със запетая</label>
+            <input type="text" id="my-words" placeholder="напр. Левски, ток, Пловдив">
+            <div class="modal-actions">
+                <button id="cancel-words" class="btn-text" type="button">отказ</button>
+                <button id="save-words" class="btn-primary" type="button">запази</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status"></div>
 
     <script>
         // Custom Sections Management
@@ -95,24 +92,161 @@
             { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
         ));
         const safeLink = (url) => /^https?:\/\//i.test(url || '') ? url : '#';
-
         const alsoInLink = (d) =>
             `<a href="${escapeHtml(safeLink(d.link))}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.source)}</a>`;
+
+        // HN-style relative time for the last 12 hours; older items keep the server's label
+        function relTime(iso) {
+            const mins = Math.floor((Date.now() - Date.parse(iso)) / 60000);
+            if (Number.isNaN(mins) || mins >= 12 * 60) return null;
+            if (mins < 1) return 'току-що';
+            if (mins < 60) return `преди ${mins} мин`;
+            return `преди ${Math.floor(mins / 60)} ч`;
+        }
+
+        // ---- Importance: "ново" tags, boxed words, the всички/нови/важни filter ----
+        const FRESH_MINUTES = 30;
+        const importanceData = JSON.parse(document.getElementById('importance-data')?.textContent || '{"hot": [], "urgent": []}');
+        const getMyWords = () => JSON.parse(localStorage.getItem('important-words') || '[]');
+        const LETTER = '[\\p{L}\\p{N}]';
+        const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        // Same rule as the classifier: case-insensitive match at the start of a word (the whole
+        // word gets boxed, so 'избор' boxes 'изборите'); all-caps acronyms (ЦИК, ЕС) match exactly
+        function stemPatterns(words) {
+            const isAcronym = (w) => w === w.toUpperCase() && w !== w.toLowerCase();
+            const acronyms = words.filter(isAcronym).map(escapeRe);
+            const stems = words.filter(w => !isAcronym(w)).map(escapeRe);
+            const patterns = [];
+            if (stems.length) patterns.push(new RegExp(`(?<!${LETTER})((?:${stems.join('|')})${LETTER}*)`, 'giu'));
+            if (acronyms.length) patterns.push(new RegExp(`(?<!${LETTER})(${acronyms.join('|')})(?!${LETTER})`, 'gu'));
+            return patterns;
+        }
+
+        // Hot words are exact names; neighbours share one box ("Илияна Йотова")
+        function hotPatterns(words) {
+            if (!words.length) return [];
+            const alt = words.map(escapeRe).join('|');
+            return [new RegExp(`(?<!${LETTER})((?:${alt})(?:\\s(?:${alt}))*)(?!${LETTER})`, 'gu')];
+        }
+
+        let boxRules = [];
+        function buildBoxRules() {
+            boxRules = [
+                ['box-urgent', stemPatterns(importanceData.urgent)],
+                ['box-mine', stemPatterns(getMyWords())],
+                ['box-hot', hotPatterns(importanceData.hot.map(h => h.word))],
+            ];
+        }
+
+        // Wrap matches in <mark>; text already inside a box is left alone
+        function boxText(el, patterns, cls) {
+            for (const re of patterns) {
+                for (const node of [...el.childNodes]) {
+                    if (node.nodeType !== Node.TEXT_NODE) continue;
+                    const parts = node.textContent.split(re);  // one capture group: matches land on odd indexes
+                    if (parts.length === 1) continue;
+                    const frag = document.createDocumentFragment();
+                    parts.forEach((part, i) => {
+                        if (!part) return;
+                        if (i % 2) {
+                            const mark = document.createElement('mark');
+                            mark.className = `box ${cls}`;
+                            mark.textContent = part;
+                            frag.append(mark);
+                        } else {
+                            frag.append(part);
+                        }
+                    });
+                    node.replaceWith(frag);
+                }
+            }
+        }
+
+        function decorate(li) {
+            const title = li.querySelector('.title');
+            if (!title) return;
+            title.textContent = title.textContent;  // drop earlier boxes
+            for (const [cls, patterns] of boxRules) boxText(title, patterns, cls);
+            // Important: a boxed word, or a story at least 3 outlets carried
+            const outlets = 1 + li.querySelectorAll('.also-in a').length;
+            li.classList.toggle('important', !!title.querySelector('.box') || outlets >= 3);
+        }
+
+        // "ново": published in the last 30 min, or just arrived over SSE
+        function markFresh(li) {
+            const t = li.querySelector('time.time');
+            const minutesSince = (ms) => (Date.now() - ms) / 60000;
+            const fresh = minutesSince(Date.parse(t.dateTime)) < FRESH_MINUTES
+                || (li.dataset.arrived && minutesSince(Number(li.dataset.arrived)) < FRESH_MINUTES);
+            li.classList.toggle('fresh', !!fresh);
+            const tag = li.querySelector('.tag-new');
+            if (fresh && !tag) li.querySelector('.title').insertAdjacentHTML('beforebegin', '<span class="tag-new">ново</span>');
+            if (!fresh && tag) tag.remove();
+        }
+
+        const FILTER_KEY = 'news-filter';
+        let filterMode = localStorage.getItem(FILTER_KEY) || 'all';
+
+        function applyFilter() {
+            document.body.classList.toggle('filter-new', filterMode === 'new');
+            document.body.classList.toggle('filter-important', filterMode === 'important');
+            document.querySelectorAll('.filter[data-filter]').forEach(b => b.classList.toggle('active', b.dataset.filter === filterMode));
+            const grid = document.getElementById('news-grid');
+            if (!grid) return;
+
+            // An item can sit in a category and a custom section; count stories once
+            const uniqueCount = (sel) => new Set([...grid.querySelectorAll(sel)].map(li => li.dataset.id)).size;
+            document.getElementById('count-new').textContent = uniqueCount('.news-item.fresh');
+            document.getElementById('count-important').textContent = uniqueCount('.news-item.important');
+
+            const need = { new: '.news-item.fresh', important: '.news-item.important' }[filterMode];
+            let shown = 0;
+            for (const section of grid.children) {
+                const empty = !!need && !section.querySelector(need);
+                section.classList.toggle('filter-empty', empty);
+                if (!empty) shown++;
+            }
+            document.getElementById('filter-empty').hidden = !need || shown > 0;
+        }
+
+        function refreshTimes(root = document) {
+            root.querySelectorAll('.news-item').forEach(li => {
+                const t = li.querySelector('time.time');
+                t.textContent = relTime(t.dateTime) || t.dataset.label;
+                markFresh(li);
+            });
+            applyFilter();
+        }
+
+        // Run after any items are rendered or inserted
+        function enhance(root = document) {
+            root.querySelectorAll('.news-item').forEach(decorate);
+            refreshTimes(root);
+        }
+
+        function renderHotWords() {
+            const box = document.getElementById('hot-words');
+            if (!box) return;
+            const main = importanceData.hot.filter(h => !h.alias_of);
+            box.innerHTML = main.length
+                ? main.map(h => `<button class="hot" type="button" data-word="${escapeHtml(h.word)}" title="${h.sources} медии, ${h.titles} заглавия за 12 ч"><mark class="box box-hot">${escapeHtml(h.word)}</mark><span class="hot-count">${h.sources}</span></button>`).join('')
+                : '<span class="hot-none">все още няма</span>';
+        }
 
         // Keep in sync with the <li> in index.html
         function articleItemHtml(a) {
             const alsoIn = (a.also_in || []).map(alsoInLink).join(', ');
             return `
                 <li class="news-item" data-id="${escapeHtml(a.id)}" data-published="${escapeHtml(a.published)}">
-                    <div class="news-item-content">
-                        <a href="${escapeHtml(safeLink(a.link))}" target="_blank" rel="noopener noreferrer" class="news-link">
-                            <span class="news-title">${escapeHtml(a.title)}</span>
-                        </a>
-                        <div class="news-meta">
-                            <span class="source-tag source-${escapeHtml(a.source.toLowerCase())}">${escapeHtml(a.source)}</span>
-                            <span class="time-tag">${escapeHtml(a.time_label)}</span>
+                    <div class="item-body">
+                        <a class="title" href="${escapeHtml(safeLink(a.link))}" target="_blank" rel="noopener noreferrer">${escapeHtml(a.title)}</a>
+                        <span class="site">(${escapeHtml(a.source)})</span>
+                        <div class="subtext">
+                            <time class="time" datetime="${escapeHtml(a.published)}" data-label="${escapeHtml(a.time_label)}">${escapeHtml(relTime(a.published) || a.time_label)}</time>${alsoIn ? `
+                            <span class="sep">|</span>
+                            <span class="also-in">също в: ${alsoIn}</span>` : ''}
                         </div>
-                        ${alsoIn ? `<div class="also-in">също в: ${alsoIn}</div>` : ''}
                     </div>
                 </li>`;
         }
@@ -123,37 +257,27 @@
         }
 
         function createCustomColumn(section) {
-            const div = document.createElement('div');
-            div.className = 'news-column-card custom-column fade-in';
-            div.dataset.category = `custom-${section.id}`;
-            div.id = `section-${section.id}`;
-            
-            div.innerHTML = `
-                <div class="column-header custom-header">
-                    <div class="drag-handle">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
-                            <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
-                        </svg>
-                    </div>
-                    <h2 class="column-title">${escapeHtml(section.name)}</h2>
-                    <button class="delete-section" data-id="${escapeHtml(section.id)}" title="Изтрий секцията">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                    </button>
-                </div>
-                <div class="news-list-wrapper">
-                    <ul class="news-list" id="list-${section.id}">
-                        <li class="loading-item">Зареждане...</li>
-                    </ul>
-                </div>
-            `;
-            return div;
+            const el = document.createElement('section');
+            el.className = 'section custom';
+            el.dataset.category = `custom-${section.id}`;
+            el.id = `section-${section.id}`;
+            el.innerHTML = `
+                <h2 class="rubric">
+                    <span class="drag-handle" title="Премести секцията">⠿</span>
+                    <span class="rubric-name">${escapeHtml(section.name)}</span>
+                    <span class="rubric-tag">${escapeHtml(section.keywords)}</span>
+                    <button class="delete-section" type="button" data-id="${escapeHtml(section.id)}" title="Изтрий секцията">премахни</button>
+                </h2>
+                <ol class="news-list" id="list-${escapeHtml(section.id)}">
+                    <li class="loading-item">зареждане…</li>
+                </ol>`;
+            return el;
         }
 
         async function loadCustomSections() {
             const grid = document.getElementById('news-grid');
             if (!grid) return;
-            
+
             const sections = getCustomSections();
             for (const section of sections) {
                 // Remove if already exists to prevent duplicates on manual refresh/update
@@ -180,15 +304,28 @@
             }));
         }
 
+        const CUSTOM_SECTION_SIZE = 15;  // more would unbalance the newspaper columns
+
         function updateColumnContent(id, articles) {
             const list = document.getElementById(`list-${id}`);
             if (!list) return;
             list.innerHTML = articles.length
                 ? articles.map(articleItemHtml).join('')
-                : '<li class="empty-msg">Няма открити новини</li>';
+                : '<li class="empty-msg">няма открити новини</li>';
+            list.parentElement.querySelector('.show-all')?.remove();
+            list.classList.toggle('collapsed', articles.length > CUSTOM_SECTION_SIZE);
+            if (articles.length > CUSTOM_SECTION_SIZE) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'show-all';
+                btn.textContent = `още ${articles.length - CUSTOM_SECTION_SIZE} ›`;
+                btn.onclick = () => { list.classList.remove('collapsed'); btn.remove(); };
+                list.after(btn);
+            }
+            enhance(list);
         }
 
-        // Column order (category + custom), persisted per browser so it survives the auto-reload
+        // Section order (category + custom), persisted per browser so it survives a reload
         const COLUMN_ORDER_KEY = 'news-column-order';
 
         function saveColumnOrder() {
@@ -201,7 +338,7 @@
         function applyColumnOrder() {
             const grid = document.getElementById('news-grid');
             if (!grid) return;
-            // Columns missing from the saved order (e.g. a just-created section) stay in front
+            // Sections missing from the saved order (e.g. a just-created one) stay in front
             for (const cat of JSON.parse(localStorage.getItem(COLUMN_ORDER_KEY) || '[]')) {
                 const el = grid.querySelector(`:scope > [data-category="${CSS.escape(cat)}"]`);
                 if (el) grid.appendChild(el);
@@ -212,14 +349,19 @@
         const eventSource = new EventSource('/events');
         const toast = document.getElementById('toast');
         const statusIndicator = document.getElementById('connection-status');
-
         let sseDropped = false;
 
         function showToast(message) {
             toast.textContent = message;
             toast.classList.remove('hidden');
-            toast.classList.add('show');
+            requestAnimationFrame(() => toast.classList.add('show'));
             setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function setLive(online) {
+            statusIndicator.classList.toggle('offline', !online);
+            statusIndicator.textContent = online ? 'на живо' : 'без връзка';
+            statusIndicator.title = online ? 'Свързан в реално време' : 'Връзката е прекъсната. Опит за повторно свързване…';
         }
 
         const bumpCounter = (el, by = 1) => { if (el) el.textContent = Number(el.textContent) + by; };
@@ -230,12 +372,13 @@
             const ts = Date.parse(a.published);
             const next = [...list.querySelectorAll('.news-item')].find(el => Date.parse(el.dataset.published) < ts);
             const hasMore = !!list.parentElement.querySelector('.load-more');
-            if (!next && hasMore) return false;  // older than everything loaded — "Покажи още" will bring it
+            if (!next && hasMore) return false;  // older than everything loaded — "още" will bring it
             list.querySelector('.empty-msg')?.remove();
             const tmp = document.createElement('template');
             tmp.innerHTML = articleItemHtml(a).trim();
             const li = tmp.content.firstElementChild;
-            li.classList.add('fade-in');
+            li.classList.add('is-new');
+            li.dataset.arrived = Date.now();
             list.insertBefore(li, next || null);
             return true;
         }
@@ -243,32 +386,33 @@
         // A new source covering a story already on screen: add it to that item's "също в"
         function addAlsoIn(dup) {
             document.querySelectorAll(`.news-item[data-id="${CSS.escape(String(dup.duplicate_of))}"]`).forEach(li => {
-                let box = li.querySelector('.also-in');
+                const box = li.querySelector('.also-in');
                 if (box) {
                     box.insertAdjacentHTML('beforeend', `, ${alsoInLink(dup)}`);
                 } else {
-                    li.querySelector('.news-item-content')
-                        .insertAdjacentHTML('beforeend', `<div class="also-in">също в: ${alsoInLink(dup)}</div>`);
+                    li.querySelector('.subtext').insertAdjacentHTML('beforeend',
+                        ` <span class="sep">|</span> <span class="also-in">също в: ${alsoInLink(dup)}</span>`);
                 }
             });
         }
 
         function applyFetch(data) {
             document.getElementById('last-update').textContent = data.last_update;
+            if (data.hot_words) {
+                importanceData.hot = data.hot_words;
+                buildBoxRules();
+                renderHotWords();
+            }
             const fresh = data.articles.filter(a => !a.duplicate_of);
             data.articles.forEach(a => bumpCounter(document.querySelector(`[data-stat-source="${CSS.escape(a.source)}"]`)));
             data.articles.filter(a => a.duplicate_of).forEach(addAlsoIn);
-            if (!fresh.length) return;
 
             const customSections = getCustomSections();
             for (const a of fresh) {
                 bumpCounter(document.getElementById('stat-total'));
                 bumpCounter(document.querySelector(`[data-stat-category="${CSS.escape(a.category)}"]`));
-                const column = document.querySelector(`#news-grid > [data-category="${CSS.escape(a.category)}"]`);
-                if (column) {
-                    bumpCounter(column.querySelector('.count-badge'));
-                    insertArticle(column.querySelector('.news-list'), a);
-                }
+                const section = document.querySelector(`#news-grid > [data-category="${CSS.escape(a.category)}"]`);
+                if (section) insertArticle(section.querySelector('.news-list'), a);
                 // Same rule as /api/search: case-insensitive substring of any keyword
                 const title = a.title.toLowerCase();
                 for (const s of customSections) {
@@ -277,7 +421,8 @@
                     if (list && keywords.some(k => title.includes(k))) insertArticle(list, a);
                 }
             }
-            showToast(`Добавени са ${fresh.length} нови статии.`);
+            enhance(document);  // hot words may have changed, so re-box everything
+            if (fresh.length) showToast(fresh.length === 1 ? '1 нова статия' : `${fresh.length} нови статии`);
         }
 
         eventSource.onmessage = (e) => {
@@ -288,14 +433,12 @@
         eventSource.onopen = () => {
             // Articles pushed while we were disconnected are missed — reload once to catch up
             if (sseDropped) location.reload();
-            statusIndicator.className = 'status-indicator online';
-            statusIndicator.title = 'Свързан в реално време';
+            setLive(true);
         };
 
         eventSource.onerror = () => {
             sseDropped = true;
-            statusIndicator.className = 'status-indicator offline';
-            statusIndicator.title = 'Връзката е прекъсната. Опит за повторно свързване...';
+            setLive(false);
         };
 
         // Manual refresh button
@@ -305,51 +448,45 @@
             const originalText = spanText.textContent;
             refreshBtn.disabled = true;
             refreshBtn.classList.add('loading');
-            spanText.textContent = 'Търсене...';
+            spanText.textContent = 'търся…';
 
             try {
                 const resp = await fetch('/api/refresh', { method: 'POST' });
                 const data = await resp.json();
                 // New articles themselves arrive over SSE
-                spanText.textContent = data.added > 0 ? `+${data.added}` : 'Няма нови';
+                spanText.textContent = data.added > 0 ? `+${data.added}` : 'няма нови';
             } catch (err) {
-                spanText.textContent = 'Грешка';
+                spanText.textContent = 'грешка';
             }
+            refreshBtn.classList.remove('loading');
             setTimeout(() => {
                 spanText.textContent = originalText;
                 refreshBtn.disabled = false;
-                refreshBtn.classList.remove('loading');
             }, 2000);
         });
 
         // ---- Dynamic Search ----
         const searchInput = document.getElementById('search-input');
         const newsGrid = document.getElementById('news-grid');
-        const dashboardHeader = document.querySelector('.dashboard-header');
         let searchResultsEl = null;
         let searchTimer = null;
 
         function getSearchResultsEl() {
             if (!searchResultsEl) {
-                searchResultsEl = document.createElement('div');
+                searchResultsEl = document.createElement('section');
                 searchResultsEl.id = 'search-results';
-                searchResultsEl.className = 'search-results-container';
+                searchResultsEl.className = 'section search-results';
                 searchResultsEl.innerHTML = `
-                    <div class="search-results-card">
-                        <div class="column-header search-header">
-                            <h2 class="column-title">Резултати</h2>
-                            <span class="count-badge" id="search-count">0</span>
-                        </div>
-                        <div class="news-list-wrapper">
-                            <ul class="news-list" id="search-list"></ul>
-                        </div>
-                    </div>`;
+                    <h2 class="rubric">
+                        <span class="rubric-name">Резултати</span>
+                        <span class="rubric-count" id="search-count">0</span>
+                    </h2>
+                    <ol class="news-list" id="search-list"></ol>`;
             }
             return searchResultsEl;
         }
 
         function enterSearchMode() {
-            if (dashboardHeader) dashboardHeader.style.display = 'none';
             if (newsGrid) newsGrid.style.display = 'none';
             const container = getSearchResultsEl();
             if (!container.parentNode) {
@@ -359,7 +496,6 @@
         }
 
         function exitSearchMode() {
-            if (dashboardHeader) dashboardHeader.style.display = '';
             if (newsGrid) newsGrid.style.display = '';
             const container = getSearchResultsEl();
             if (container.parentNode) container.style.display = 'none';
@@ -371,10 +507,11 @@
             if (!list) return;
             count.textContent = articles.length;
             if (articles.length === 0) {
-                list.innerHTML = '<li class="empty-msg">Няма намерени резултати</li>';
+                list.innerHTML = '<li class="empty-msg">няма намерени резултати</li>';
                 return;
             }
             list.innerHTML = articles.map(articleItemHtml).join('');
+            enhance(list);
         }
 
         if (searchInput) {
@@ -387,14 +524,14 @@
                 }
                 enterSearchMode();
                 const list = document.getElementById('search-list');
-                if (list) list.innerHTML = '<li class="loading-item">Търсене...</li>';
+                if (list) list.innerHTML = '<li class="loading-item">търсене…</li>';
                 searchTimer = setTimeout(async () => {
                     try {
                         const resp = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
                         const articles = await resp.json();
                         if (searchInput.value.trim()) renderSearchResults(articles);
                     } catch (e) {
-                        if (list) list.innerHTML = '<li class="empty-msg">Грешка при търсенето</li>';
+                        if (list) list.innerHTML = '<li class="empty-msg">грешка при търсенето</li>';
                     }
                 }, 250);
             });
@@ -412,27 +549,72 @@
             customKeywords.value = '';
         };
 
-        document.getElementById('add-custom-btn').addEventListener('click', openModal);
-        document.getElementById('cancel-modal').addEventListener('click', closeModal);
-        customModal.addEventListener('click', (e) => { if (e.target === customModal) closeModal(); });
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && !customModal.classList.contains('hidden')) closeModal();
-        });
-        document.getElementById('save-custom').addEventListener('click', () => {
+        function saveCustomFromModal() {
             const name = customName.value.trim();
             const keywords = customKeywords.value.trim();
             if (!name || !keywords) return;
             saveCustomSections([...getCustomSections(), { id: Date.now(), name, keywords }]);
             closeModal();
             loadCustomSections();
+        }
+
+        document.getElementById('add-custom-btn').addEventListener('click', openModal);
+        document.getElementById('cancel-modal').addEventListener('click', closeModal);
+        document.getElementById('save-custom').addEventListener('click', saveCustomFromModal);
+        customKeywords.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveCustomFromModal(); });
+        customModal.addEventListener('click', (e) => { if (e.target === customModal) closeModal(); });
+
+        // ---- Important words modal ----
+        const wordsModal = document.getElementById('words-modal');
+        const myWordsInput = document.getElementById('my-words');
+        const closeWords = () => wordsModal.classList.add('hidden');
+
+        function saveWords() {
+            const words = [...new Set(myWordsInput.value.split(',').map(w => w.trim()).filter(Boolean))];
+            localStorage.setItem('important-words', JSON.stringify(words));
+            closeWords();
+            buildBoxRules();
+            enhance(document);
+        }
+
+        document.getElementById('edit-words-btn')?.addEventListener('click', () => {
+            myWordsInput.value = getMyWords().join(', ');
+            wordsModal.classList.remove('hidden');
+            myWordsInput.focus();
+        });
+        document.getElementById('cancel-words').addEventListener('click', closeWords);
+        document.getElementById('save-words').addEventListener('click', saveWords);
+        myWordsInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveWords(); });
+        wordsModal.addEventListener('click', (e) => { if (e.target === wordsModal) closeWords(); });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if (!customModal.classList.contains('hidden')) closeModal();
+            if (!wordsModal.classList.contains('hidden')) closeWords();
         });
 
-        // ---- Per-column "Покажи още" ----
+        // ---- Filter bar ----
+        document.querySelectorAll('.filter[data-filter]').forEach(btn => btn.addEventListener('click', () => {
+            filterMode = btn.dataset.filter;
+            localStorage.setItem(FILTER_KEY, filterMode);
+            applyFilter();
+        }));
+
+        // A hot word is a one-click filter: it becomes the search
+        document.getElementById('hot-words')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('.hot');
+            if (!btn) return;
+            searchInput.value = btn.dataset.word;
+            searchInput.dispatchEvent(new Event('input'));
+            window.scrollTo({ top: 0 });
+        });
+
+        // ---- Per-section "още" ----
         document.addEventListener('click', async (e) => {
             const btn = e.target.closest('.load-more');
             if (!btn) return;
             const list = btn.parentElement.querySelector('.news-list');
-            // Offset = what this column already shows, so articles pushed over SSE don't shift paging
+            // Offset = what this section already shows, so articles pushed over SSE don't shift paging
             const offset = list.querySelectorAll('.news-item').length;
             btn.disabled = true;
             try {
@@ -444,12 +626,16 @@
                     }
                 }
                 if (offset + data.articles.length >= data.total) btn.remove();
+                enhance(list);
             } finally {
                 btn.disabled = false;
             }
         });
 
-        // ---- Init: draggable columns + saved custom sections ----
+        // ---- Init: boxes and tags, draggable sections, saved custom sections, ticking times ----
+        buildBoxRules();
+        renderHotWords();
+        enhance(document);
         if (newsGrid) {
             if (window.Sortable) {
                 Sortable.create(newsGrid, {
@@ -462,6 +648,7 @@
             applyColumnOrder();
             loadCustomSections();
         }
+        setInterval(refreshTimes, 60 * 1000);
     </script>
 </body>
 </html>
